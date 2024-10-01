@@ -1,0 +1,40 @@
+// File: android/app/build.gradle
+
+plugins {
+    id 'com.android.application'
+    id 'kotlin-android'
+    id 'dev.flutter.flutter-gradle-plugin'
+}
+
+android {
+    namespace 'com.example.parcel_swipe_app'
+    compileSdkVersion 34
+
+    defaultConfig {
+        applicationId "com.example.parcel_swipe_app"
+        minSdkVersion 21
+        targetSdkVersion 34
+        versionCode 1
+        versionName "1.0"
+    }
+
+    buildTypes {
+        release {
+            signingConfig signingConfigs.debug
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+
+    kotlinOptions {
+        jvmTarget = '1.8'
+    }
+}
+
+dependencies {
+    implementation 'androidx.appcompat:appcompat:1.5.1' // AppCompat dependency
+    // No need to add Mapbox SDK dependency here
+}
