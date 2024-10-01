@@ -218,10 +218,9 @@ class _MyAppState extends State<MyApp> {
       null,     // offset
     );
 
-    // Animate the camera to fit the bounding box
-    await _mapboxMap.easeTo(
+    // **Updated Part: Replace `easeTo` with `setCamera` for instant camera movement**
+    await _mapboxMap.setCamera(
       cameraOptions,
-      MapAnimationOptions(duration: 1000),
     );
   }
 
