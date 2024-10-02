@@ -37,16 +37,23 @@ class _MyAppState extends State<MyApp> {
   // Load GeoJSON data
   Future<void> _loadGeoJsonData() async {
     try {
-      String data = await rootBundle.loadString('lib/geojson/sample_geojson.json');
+      // Updated path with forward slashes
+      String data = await rootBundle.loadString('lib/geojson/Epsom_Ewell_GEOJSON.geojson');
       _geoJsonData = jsonDecode(data);
 
       // Extract the list of features (polygons)
-      _features = _geoJsonData!['features'];
+      List<dynamic> allFeatures = _geoJsonData!['features'];
+
+      // Filter features to include only Polygon and MultiPolygon types
+      _features = allFeatures.where((feature) {
+        String type = feature['geometry']['type'];
+        return type == 'Polygon' || type == 'MultiPolygon';
+      }).toList();
 
       if (_features == null || _features!.isEmpty) {
-        print('No features found in GeoJSON data.');
+        print('No valid Polygon or MultiPolygon features found in GeoJSON data.');
       } else {
-        print('Loaded ${_features!.length} features.');
+        print('Loaded ${_features!.length} Polygon/MultiPolygon features.');
       }
     } catch (e) {
       print('Error loading GeoJSON data: $e');
@@ -179,8 +186,55 @@ class _MyAppState extends State<MyApp> {
       return;
     }
 
-    // Get the current feature's entity
-    int currentEntity = _features![_currentIndex]['properties']['entity'];
+    // Get the current feature's properties
+    var currentFeature = _features![_currentIndex];
+    var properties = currentFeature['properties'];
+    var currentInspireId = properties['INSPIREID'];
+    var geometry = currentFeature['geometry'];
+
+    // Log the INSPIREID and geometry type
+    print('Processing INSPIREID: $currentInspireId, Geometry Type: ${geometry['type']}');
+
+    // Check if geometry and coordinates exist
+    if (geometry == null || geometry['coordinates'] == null) {
+      print('Invalid geometry for INSPIREID: $currentInspireId. Skipping.');
+      _nextPolygon();
+      return;
+    }
+
+    // **Extract coordinates based on geometry type**
+    List<dynamic> coordinates;
+    String type = geometry['type'];
+
+    if (type == 'Polygon') {
+      if (geometry['coordinates'].isEmpty) {
+        print('Polygon coordinates are empty for INSPIREID: $currentInspireId. Skipping.');
+        _nextPolygon();
+        return;
+      }
+      coordinates = geometry['coordinates'][0];
+    } else if (type == 'MultiPolygon') {
+      if (geometry['coordinates'].isEmpty || geometry['coordinates'][0].isEmpty) {
+        print('MultiPolygon coordinates are empty for INSPIREID: $currentInspireId. Skipping.');
+        _nextPolygon();
+        return;
+      }
+      coordinates = geometry['coordinates'][0][0];
+    } else {
+      print('Unsupported geometry type: $type for INSPIREID: $currentInspireId. Skipping.');
+      _nextPolygon();
+      return;
+    }
+
+    // Ensure coordinates are valid
+    if (coordinates.isEmpty || coordinates.first.length < 2) {
+      print('Invalid coordinates structure for INSPIREID: $currentInspireId. Skipping.');
+      _nextPolygon();
+      return;
+    }
+
+    // **Using 'INSPIREID' as Unique Identifier**
+    var currentInspireIdValue = properties['INSPIREID'];
 
     // Access the layer using the layer ID
     var layer = await _mapboxMap.style.getLayer('my-fill-layer');
@@ -189,8 +243,8 @@ class _MyAppState extends State<MyApp> {
       // Set a filter on the layer to display only the current polygon
       layer.filter = [
         '==',
-        ['get', 'entity'],
-        currentEntity,
+        ['get', 'INSPIREID'],
+        currentInspireIdValue,
       ];
 
       // Update the layer with the new filter
@@ -198,9 +252,6 @@ class _MyAppState extends State<MyApp> {
     }
 
     // Adjust the camera to fit the current polygon
-    var geometry = _features![_currentIndex]['geometry'];
-
-    // Calculate the coordinate bounds of the feature
     var coordinateBounds = _getFeatureBounds(geometry);
 
     // Compute camera options to fit the coordinate bounds
@@ -218,7 +269,7 @@ class _MyAppState extends State<MyApp> {
       null,     // offset
     );
 
-    // **Updated Part: Replace `easeTo` with `setCamera` for instant camera movement**
+    // **Replace `easeTo` with `setCamera` for instant camera movement**
     await _mapboxMap.setCamera(
       cameraOptions,
     );
@@ -226,13 +277,65 @@ class _MyAppState extends State<MyApp> {
 
   // Helper function to get the coordinate bounds of a feature
   CoordinateBounds _getFeatureBounds(Map<String, dynamic> geometry) {
-    List<dynamic> coordinates = geometry['coordinates'][0];
+    if (geometry == null || geometry['coordinates'] == null) {
+      print('Geometry or coordinates are null.');
+      // Return default bounds or handle as needed
+      return CoordinateBounds(
+        southwest: Point(coordinates: Position(-180, -90)),
+        northeast: Point(coordinates: Position(180, 90)),
+        infiniteBounds: false,
+      );
+    }
+
+    String type = geometry['type'];
+    List<dynamic> coordinates;
+
+    if (type == 'Polygon') {
+      if (geometry['coordinates'].isEmpty) {
+        print('Polygon coordinates are empty.');
+        return CoordinateBounds(
+          southwest: Point(coordinates: Position(-180, -90)),
+          northeast: Point(coordinates: Position(180, 90)),
+          infiniteBounds: false,
+        );
+      }
+      coordinates = geometry['coordinates'][0];
+    } else if (type == 'MultiPolygon') {
+      if (geometry['coordinates'].isEmpty || geometry['coordinates'][0].isEmpty) {
+        print('MultiPolygon coordinates are empty.');
+        return CoordinateBounds(
+          southwest: Point(coordinates: Position(-180, -90)),
+          northeast: Point(coordinates: Position(180, 90)),
+          infiniteBounds: false,
+        );
+      }
+      coordinates = geometry['coordinates'][0][0];
+    } else {
+      print('Unsupported geometry type: $type');
+      return CoordinateBounds(
+        southwest: Point(coordinates: Position(-180, -90)),
+        northeast: Point(coordinates: Position(180, 90)),
+        infiniteBounds: false,
+      );
+    }
+
+    // Ensure coordinates are valid
+    if (coordinates.isEmpty || coordinates.first.length < 2) {
+      print('Invalid coordinates structure.');
+      return CoordinateBounds(
+        southwest: Point(coordinates: Position(-180, -90)),
+        northeast: Point(coordinates: Position(180, 90)),
+        infiniteBounds: false,
+      );
+    }
+
     double minLat = coordinates[0][1];
     double minLng = coordinates[0][0];
     double maxLat = coordinates[0][1];
     double maxLng = coordinates[0][0];
 
     for (var coord in coordinates) {
+      if (coord.length < 2) continue; // Skip invalid coordinates
       double lng = coord[0];
       double lat = coord[1];
       if (lat < minLat) minLat = lat;
@@ -244,7 +347,7 @@ class _MyAppState extends State<MyApp> {
     return CoordinateBounds(
       southwest: Point(coordinates: Position(minLng, minLat)),
       northeast: Point(coordinates: Position(maxLng, maxLat)),
-      infiniteBounds: false, // Required named parameter
+      infiniteBounds: false,
     );
   }
 }
