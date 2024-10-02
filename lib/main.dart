@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart' show rootBundle;
+import 'package:flutter/services.dart' show rootBundle, FilteringTextInputFormatter;
 import 'dart:convert'; // To handle GeoJSON data
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
 
@@ -12,32 +12,46 @@ void main() {
   // Set the access token for Mapbox
   MapboxOptions.setAccessToken(accessToken);
 
-  runApp(const MyApp());
+  runApp(const MyApp()); // Root widget
 }
 
-class MyApp extends StatefulWidget { // Changed to StatefulWidget to manage state
+class MyApp extends StatelessWidget { // Changed to StatelessWidget
   const MyApp({super.key});
 
   @override
-  State<MyApp> createState() => _MyAppState();
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      home: const MyHomePage(), // Reference to the new stateful widget
+    );
+  }
 }
 
-class _MyAppState extends State<MyApp> {
+class MyHomePage extends StatefulWidget { // New stateful widget
+  const MyHomePage({super.key});
+
+  @override
+  State<MyHomePage> createState() => _MyHomePageState();
+}
+
+class _MyHomePageState extends State<MyHomePage> {
   late MapboxMap _mapboxMap;
   List<dynamic>? _features; // Changed to nullable to handle initialization
+  List<dynamic>? _filteredFeatures; // For filtered features
   int _currentIndex = 0; // Current polygon index
   Map<String, dynamic>? _geoJsonData;
+  double? _minAcres;
+  double? _maxAcres;
+  int _totalParcels = 0; // Total number of parcels
 
   @override
   void initState() {
     super.initState();
-    // Do not call _loadGeoJsonData here
+    _loadGeoJsonData();
   }
 
   // Load GeoJSON data
   Future<void> _loadGeoJsonData() async {
     try {
-      // Updated path with forward slashes
       String data = await rootBundle.loadString('lib/geojson/Epsom_Ewell_GEOJSON.geojson');
       _geoJsonData = jsonDecode(data);
 
@@ -49,6 +63,9 @@ class _MyAppState extends State<MyApp> {
         String type = feature['geometry']['type'];
         return type == 'Polygon' || type == 'MultiPolygon';
       }).toList();
+
+      _totalParcels = _features!.length;
+      _filteredFeatures = List.from(_features!); // Initialize filtered features
 
       if (_features == null || _features!.isEmpty) {
         print('No valid Polygon or MultiPolygon features found in GeoJSON data.');
@@ -70,66 +87,65 @@ class _MyAppState extends State<MyApp> {
       zoom: 5.0,
     );
 
-    // Define the AppCompat theme
-    ThemeData appTheme = ThemeData(
-      platform: TargetPlatform.android,
-    );
-
-    Theme appCompatTheme = Theme(
-      data: appTheme.copyWith(
-        // Define AppCompat theme properties if necessary
-      ),
-      child: MapWidget(
-        key: const ValueKey("mapWidget"),
-        cameraOptions: cameraOptions,
-        styleUri: MapboxStyles.SATELLITE_STREETS,
-        onMapCreated: _onMapCreated, // Hook to perform actions after map creation
-      ),
-    );
-
-    return MaterialApp(
-      home: Scaffold(
-        appBar: AppBar(title: const Text('Mapbox Map Test')),
-        body: Column(
-          children: [
-            Expanded(
-              child: appCompatTheme,
+    return Scaffold(
+      appBar: AppBar(title: const Text('Mapbox Map Test')),
+      body: Column(
+        children: [
+          // Display the total number of parcels
+          Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: Text(
+              'Total Parcels: ${_filteredFeatures?.length ?? 0}',
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
             ),
-            Padding(
-              padding: const EdgeInsets.all(8.0),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  ElevatedButton(
-                    onPressed: _previousPolygon,
-                    child: const Text('Back'),
-                  ),
-                  const SizedBox(width: 20),
-                  ElevatedButton(
-                    onPressed: _nextPolygon,
-                    child: const Text('Next'),
-                  ),
-                ],
-              ),
+          ),
+          Expanded(
+            child: MapWidget(
+              key: const ValueKey("mapWidget"),
+              cameraOptions: cameraOptions,
+              styleUri: MapboxStyles.SATELLITE_STREETS,
+              onMapCreated: _onMapCreated, // Hook to perform actions after map creation
             ),
-          ],
-        ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                ElevatedButton(
+                  onPressed: _previousPolygon,
+                  child: const Text('Back'),
+                ),
+                const SizedBox(width: 20),
+                ElevatedButton(
+                  onPressed: _nextPolygon,
+                  child: const Text('Next'),
+                ),
+                const SizedBox(width: 20),
+                ElevatedButton(
+                  onPressed: _openFilterDialog,
+                  child: const Text('Filter'),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
 
   void _previousPolygon() {
-    if (_features == null || _features!.isEmpty) return;
+    if (_filteredFeatures == null || _filteredFeatures!.isEmpty) return;
     setState(() {
-      _currentIndex = (_currentIndex - 1 + _features!.length) % _features!.length;
+      _currentIndex = (_currentIndex - 1 + _filteredFeatures!.length) % _filteredFeatures!.length;
       _updatePolygon();
     });
   }
 
   void _nextPolygon() {
-    if (_features == null || _features!.isEmpty) return;
+    if (_filteredFeatures == null || _filteredFeatures!.isEmpty) return;
     setState(() {
-      _currentIndex = (_currentIndex + 1) % _features!.length;
+      _currentIndex = (_currentIndex + 1) % _filteredFeatures!.length;
       _updatePolygon();
     });
   }
@@ -181,13 +197,13 @@ class _MyAppState extends State<MyApp> {
   }
 
   Future<void> _updatePolygon() async {
-    if (_features == null || _features!.isEmpty) {
+    if (_filteredFeatures == null || _filteredFeatures!.isEmpty) {
       print('No features available to update.');
       return;
     }
 
     // Get the current feature's properties
-    var currentFeature = _features![_currentIndex];
+    var currentFeature = _filteredFeatures![_currentIndex];
     var properties = currentFeature['properties'];
     var currentInspireId = properties['INSPIREID'];
     var geometry = currentFeature['geometry'];
@@ -349,5 +365,87 @@ class _MyAppState extends State<MyApp> {
       northeast: Point(coordinates: Position(maxLng, maxLat)),
       infiniteBounds: false,
     );
+  }
+
+  void _openFilterDialog() {
+    double? minAcresInput = _minAcres;
+    double? maxAcresInput = _maxAcres;
+
+    showDialog(
+      context: context, // Correct context
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Set Acre Filters'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                decoration: const InputDecoration(labelText: 'Min Acres'),
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                inputFormatters: [
+                  FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,2}')),
+                ],
+                onChanged: (value) {
+                  minAcresInput = double.tryParse(value);
+                },
+              ),
+              TextField(
+                decoration: const InputDecoration(labelText: 'Max Acres'),
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                inputFormatters: [
+                  FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,2}')),
+                ],
+                onChanged: (value) {
+                  maxAcresInput = double.tryParse(value);
+                },
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                // Apply filters
+                setState(() {
+                  _minAcres = minAcresInput;
+                  _maxAcres = maxAcresInput;
+                  _applyFilters();
+                  _currentIndex = 0; // Reset to first polygon
+                  _updatePolygon();
+                });
+                Navigator.of(context).pop();
+              },
+              child: const Text('Set Filters'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _applyFilters() {
+    if (_features == null) return;
+
+    _filteredFeatures = _features!.where((feature) {
+      var acres = feature['properties']['Acres'];
+      if (acres == null) return false;
+
+      double acresValue;
+      if (acres is String) {
+        acresValue = double.tryParse(acres) ?? 0.0;
+      } else if (acres is num) {
+        acresValue = acres.toDouble();
+      } else {
+        return false;
+      }
+
+      bool passesMin = _minAcres == null || acresValue >= _minAcres!;
+      bool passesMax = _maxAcres == null || acresValue <= _maxAcres!;
+      return passesMin && passesMax;
+    }).toList();
+
+    // Update total parcels display
+    setState(() {
+      _totalParcels = _filteredFeatures!.length;
+    });
   }
 }
