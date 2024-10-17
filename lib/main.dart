@@ -52,7 +52,8 @@ class _MyHomePageState extends State<MyHomePage> {
   // Load GeoJSON data
   Future<void> _loadGeoJsonData() async {
     try {
-      String data = await rootBundle.loadString('lib/geojson/Epsom_Ewell_GEOJSON.geojson');
+      // **Updated JSON file path**
+      String data = await rootBundle.loadString('lib/geojson/api_test.json');
       _geoJsonData = jsonDecode(data);
 
       // Extract the list of features (polygons)
@@ -205,7 +206,10 @@ class _MyHomePageState extends State<MyHomePage> {
     // Get the current feature's properties
     var currentFeature = _filteredFeatures![_currentIndex];
     var properties = currentFeature['properties'];
-    var currentInspireId = properties['INSPIREID'];
+
+    // **Updated property name to match new JSON**
+    var currentInspireId = properties['inspireid']; // Changed from 'INSPIREID' to 'inspireid'
+
     var geometry = currentFeature['geometry'];
 
     // Log the INSPIREID and geometry type
@@ -249,8 +253,8 @@ class _MyHomePageState extends State<MyHomePage> {
       return;
     }
 
-    // **Using 'INSPIREID' as Unique Identifier**
-    var currentInspireIdValue = properties['INSPIREID'];
+    // **Using 'inspireid' as Unique Identifier**
+    var currentInspireIdValue = properties['inspireid']; // Changed from 'INSPIREID'
 
     // Access the layer using the layer ID
     var layer = await _mapboxMap.style.getLayer('my-fill-layer');
@@ -259,7 +263,7 @@ class _MyHomePageState extends State<MyHomePage> {
       // Set a filter on the layer to display only the current polygon
       layer.filter = [
         '==',
-        ['get', 'INSPIREID'],
+        ['get', 'inspireid'], // Changed from 'INSPIREID'
         currentInspireIdValue,
       ];
 
@@ -426,7 +430,8 @@ class _MyHomePageState extends State<MyHomePage> {
     if (_features == null) return;
 
     _filteredFeatures = _features!.where((feature) {
-      var acres = feature['properties']['Acres'];
+      // **Updated property name to match new JSON**
+      var acres = feature['properties']['acres']; // Changed from 'Acres'
       if (acres == null) return false;
 
       double acresValue;
