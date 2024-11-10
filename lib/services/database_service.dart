@@ -1,3 +1,5 @@
+// lib/services/database_service.dart
+
 import 'package:postgres/postgres.dart';
 import 'package:logger/logger.dart';
 
@@ -8,6 +10,9 @@ class DatabaseService {
 
   late Connection _connection;
   final Logger logger = Logger();
+
+  // Define allowed land types for validation
+  final List<String> _allowedLandTypes = ['Greenfield', 'Brownfield', 'Unsure'];
 
   DatabaseService._internal();
 
@@ -50,10 +55,12 @@ class DatabaseService {
       logger.i('PostgreSQL connection closed');
     } catch (e) {
       logger.e('Error closing PostgreSQL connection: $e');
+      // Assuming you want to rethrow here as well
+      rethrow;
     }
   }
 
-  /// Fetches parcels with optional filtering and pagination.
+  /// Fetches parcels with optional filtering and pagination, including land type filtering.
   Future<List<Map<String, dynamic>>> fetchParcels({
     required int pageNumber,
     required int pageSize,
@@ -63,6 +70,7 @@ class DatabaseService {
     String? localAuthorityDistrictName,
     double? minAcres,
     double? maxAcres,
+    String? landType, // New parameter for land type
   }) async {
     final offset = pageNumber * pageSize;
 
@@ -115,6 +123,16 @@ class DatabaseService {
       whereClauses.add('parcels.acres <= @maxAcres');
       substitutionValues['maxAcres'] = maxAcres; // double
     }
+    if (landType != null && landType.isNotEmpty) {
+      // Always perform LEFT JOIN with parcel_land_types when landType filter is applied
+      query += ' LEFT JOIN parcel_land_types ON parcels.inspireid = parcel_land_types.inspireid';
+      if (landType == 'Unseen') {
+        whereClauses.add('parcel_land_types.land_type IS NULL');
+      } else {
+        whereClauses.add('parcel_land_types.land_type = @landType');
+        substitutionValues['landType'] = landType; // String
+      }
+    }
 
     if (whereClauses.isNotEmpty) {
       query += ' WHERE ${whereClauses.join(' AND ')}';
@@ -136,7 +154,7 @@ class DatabaseService {
     }
   }
 
-  /// Retrieves the total number of parcels with optional filtering.
+  /// Retrieves the total number of parcels with optional filtering, including land type filtering.
   Future<int> getTotalParcels({
     String? countyName,
     String? builtUpAreaName,
@@ -144,6 +162,7 @@ class DatabaseService {
     String? localAuthorityDistrictName,
     double? minAcres,
     double? maxAcres,
+    String? landType, // New parameter for land type
   }) async {
     String query = '''
       SELECT COUNT(*) 
@@ -180,6 +199,16 @@ class DatabaseService {
     if (maxAcres != null) {
       whereClauses.add('parcels.acres <= @maxAcres');
       substitutionValues['maxAcres'] = maxAcres; // double
+    }
+    if (landType != null && landType.isNotEmpty) {
+      // Always perform LEFT JOIN with parcel_land_types when landType filter is applied
+      query += ' LEFT JOIN parcel_land_types ON parcels.inspireid = parcel_land_types.inspireid';
+      if (landType == 'Unseen') {
+        whereClauses.add('parcel_land_types.land_type IS NULL');
+      } else {
+        whereClauses.add('parcel_land_types.land_type = @landType');
+        substitutionValues['landType'] = landType; // String
+      }
     }
 
     if (whereClauses.isNotEmpty) {
@@ -349,5 +378,77 @@ class DatabaseService {
       logger.e('Error fetching distinct local authority districts: $e');
       return [];
     }
+  }
+
+  /// Fetches distinct land types, excluding nulls.
+  Future<List<String>> fetchDistinctLandTypes() async {
+    String query = '''
+      SELECT DISTINCT land_type
+      FROM parcel_land_types
+      WHERE land_type IS NOT NULL
+      ORDER BY land_type ASC
+    ''';
+
+    try {
+      final result = await _connection.execute(
+        Sql.named(query),
+      );
+
+      // Log the raw result for debugging (optional)
+      logger.d('fetchDistinctLandTypes result: $result');
+
+      return result
+          .map((row) {
+            final landType = row.toColumnMap()['land_type'];
+            if (landType == null) {
+              logger.w('Encountered null land_type in row: $row');
+              return null;
+            }
+            return landType as String;
+          })
+          .where((name) => name != null)
+          .cast<String>()
+          .toList();
+    } catch (e) {
+      logger.e('Error fetching distinct land types: $e');
+      return [];
+    }
+  }
+
+  /// Assigns a land type to a parcel with validation.
+  Future<void> assignLandType(String inspireid, String landType) async {
+    // Validate land type
+    if (!_isValidLandType(landType)) {
+      logger.e('Invalid land type attempted to assign: $landType');
+      throw Exception('Invalid land type: $landType');
+    }
+
+    String query = '''
+      INSERT INTO parcel_land_types (inspireid, land_type)
+      VALUES (@inspireid, @landType)
+      ON CONFLICT (inspireid) DO UPDATE
+      SET land_type = @landType, assigned_at = CURRENT_TIMESTAMP;
+    ''';
+
+    Map<String, Object?> substitutionValues = {
+      'inspireid': inspireid, // Adjust type if inspireid is not a String
+      'landType': landType,
+    };
+
+    try {
+      await _connection.execute(
+        Sql.named(query),
+        parameters: substitutionValues,
+      );
+      logger.i('Assigned land type "$landType" to parcel $inspireid');
+    } catch (e) {
+      logger.e('Error assigning land type: $e');
+      rethrow; // Re-throw the exception to preserve the stack trace
+    }
+  }
+
+  /// Validates if the provided land type is allowed.
+  bool _isValidLandType(String landType) {
+    return _allowedLandTypes.contains(landType);
   }
 }
