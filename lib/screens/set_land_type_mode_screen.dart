@@ -340,6 +340,9 @@ class _SetLandTypeModeScreenState extends State<SetLandTypeModeScreen> {
           case 'Unsure':
             fillColor = Colors.grey;
             break;
+          case 'NA':
+            fillColor = Colors.red; // Choose an appropriate color for NA
+            break;
           default:
             fillColor = Colors.blue;
         }
@@ -545,6 +548,39 @@ class _SetLandTypeModeScreenState extends State<SetLandTypeModeScreen> {
     var currentFeature = _filteredFeatures[_currentIndex];
     String inspireid = currentFeature['inspireid'].toString();
 
+    String? currentLandType = currentFeature['landType'];
+
+    // If the parcel already has a land type, show confirmation dialog
+    if (currentLandType != null &&
+        currentLandType.isNotEmpty &&
+        currentLandType != 'Unseen') {
+      bool? confirm = await showDialog<bool>(
+        context: context,
+        builder: (context) {
+          return AlertDialog(
+            title: const Text('Confirm Reassignment'),
+            content: Text(
+                'This parcel already has a land type "$currentLandType". Are you sure you want to reassign it to "$landType"?'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                child: const Text('Confirm'),
+              ),
+            ],
+          );
+        },
+      );
+
+      if (confirm != true) {
+        // User cancelled the reassignment
+        return;
+      }
+    }
+
     try {
       await widget.dbService.assignLandType(inspireid, landType);
       widget.logger.i(
@@ -625,22 +661,24 @@ class _SetLandTypeModeScreenState extends State<SetLandTypeModeScreen> {
           ),
           Padding(
             padding: const EdgeInsets.all(8.0),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
+            child: Wrap(
+              spacing: 20,
               children: [
                 CustomNavigationButton(
                   label: 'Greenfield',
                   onPressed: () => _assignLandType('Greenfield'),
                 ),
-                const SizedBox(width: 20),
                 CustomNavigationButton(
                   label: 'Brownfield',
                   onPressed: () => _assignLandType('Brownfield'),
                 ),
-                const SizedBox(width: 20),
                 CustomNavigationButton(
                   label: 'Unsure',
                   onPressed: () => _assignLandType('Unsure'),
+                ),
+                CustomNavigationButton(
+                  label: 'NA',
+                  onPressed: () => _assignLandType('NA'),
                 ),
               ],
             ),

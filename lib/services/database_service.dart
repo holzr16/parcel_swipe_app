@@ -12,7 +12,7 @@ class DatabaseService {
   final Logger logger = Logger();
 
   // Define allowed land types for validation
-  final List<String> _allowedLandTypes = ['Greenfield', 'Brownfield', 'Unsure'];
+  final List<String> _allowedLandTypes = ['Greenfield', 'Brownfield', 'Unsure', 'NA'];
 
   DatabaseService._internal();
 
