@@ -204,6 +204,7 @@ class _SetLandTypeModeScreenState extends State<SetLandTypeModeScreen> {
               "inspireid": feature['inspireid'],
               "acres": feature['acres'],
               "gml_id": feature['gml_id'],
+              "landType": feature['landType'], // Ensure landType is included
             },
             "geometry": jsonDecode(feature['geom']),
           };
@@ -326,7 +327,24 @@ class _SetLandTypeModeScreenState extends State<SetLandTypeModeScreen> {
           currentInspireId,
         ];
 
-        layer.fillColor = Colors.green.value;
+        // Update fill color based on land type
+        String landType = currentFeature['landType'] ?? 'Unseen';
+        Color fillColor;
+        switch (landType) {
+          case 'Greenfield':
+            fillColor = Colors.green;
+            break;
+          case 'Brownfield':
+            fillColor = Colors.brown;
+            break;
+          case 'Unsure':
+            fillColor = Colors.grey;
+            break;
+          default:
+            fillColor = Colors.blue;
+        }
+
+        layer.fillColor = fillColor.value;
 
         await _mapboxMap.style.updateLayer(layer);
       } else {
@@ -452,6 +470,15 @@ class _SetLandTypeModeScreenState extends State<SetLandTypeModeScreen> {
     );
   }
 
+  void _previousParcel() {
+    if (_filteredFeatures.isEmpty) return;
+    setState(() {
+      _currentIndex =
+          (_currentIndex - 1 + _filteredFeatures.length) % _filteredFeatures.length;
+    });
+    _updateParcel();
+  }
+
   void _nextParcel() {
     if (_filteredFeatures.isEmpty) return;
     setState(() {
@@ -523,7 +550,14 @@ class _SetLandTypeModeScreenState extends State<SetLandTypeModeScreen> {
       widget.logger.i(
           'Land type "$landType" assigned successfully to parcel $inspireid.');
       _showSuccessSnackbar('Land type "$landType" assigned successfully.');
-      await _applyFiltersAndRefresh();
+
+      // Update the local data to reflect the assignment
+      setState(() {
+        _filteredFeatures[_currentIndex]['landType'] = landType;
+      });
+
+      // Navigate to the next parcel
+      _nextParcel();
     } catch (e) {
       widget.logger.e('Error assigning land type: $e');
       _showErrorSnackbar('Failed to assign land type "$landType".');
