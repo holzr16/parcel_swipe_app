@@ -35,6 +35,7 @@ class _ViewModeScreenState extends State<ViewModeScreen> {
   String? _selectedRegion;
   String? _selectedLocalAuthorityDistrict;
   String? _selectedLandType;
+  bool _buaOnly = false; // New state variable for BUA Only
   int _totalParcels = 0;
   int _pageNumber = 0;
   final int _pageSize = 100;
@@ -150,6 +151,7 @@ class _ViewModeScreenState extends State<ViewModeScreen> {
         minAcres: _minAcres,
         maxAcres: _maxAcres,
         landType: landTypeFilter,
+        buaOnly: _buaOnly, // Pass BUA Only filter
       );
 
       // Fetch first page of parcels based on filters
@@ -163,6 +165,7 @@ class _ViewModeScreenState extends State<ViewModeScreen> {
         minAcres: _minAcres,
         maxAcres: _maxAcres,
         landType: landTypeFilter,
+        buaOnly: _buaOnly, // Pass BUA Only filter
       );
 
       _pageCache[_pageNumber] = parcels;
@@ -484,6 +487,7 @@ class _ViewModeScreenState extends State<ViewModeScreen> {
           initialSelectedRegion: _selectedRegion,
           initialSelectedLocalAuthorityDistrict: _selectedLocalAuthorityDistrict,
           initialSelectedLandType: _selectedLandType,
+          initialBUAOnly: _buaOnly, // Pass initial BUA Only state
           onApply: ({
             double? minAcres,
             double? maxAcres,
@@ -492,6 +496,7 @@ class _ViewModeScreenState extends State<ViewModeScreen> {
             String? selectedRegion,
             String? selectedLocalAuthorityDistrict,
             String? selectedLandType,
+            bool buaOnly = false, // Receive BUA Only state
           }) {
             if (minAcres != null &&
                 maxAcres != null &&
@@ -510,6 +515,7 @@ class _ViewModeScreenState extends State<ViewModeScreen> {
               _selectedLandType = selectedLandType;
               _minAcres = minAcres;
               _maxAcres = maxAcres;
+              _buaOnly = buaOnly; // Update BUA Only state
             });
             _applyFiltersAndRefresh();
             Navigator.of(context).pop();

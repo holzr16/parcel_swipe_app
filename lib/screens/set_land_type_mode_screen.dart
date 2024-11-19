@@ -3,20 +3,20 @@
 import 'package:flutter/material.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
 import '../services/database_service.dart';
+import '../widgets/dialogs/filter_dialog.dart';
 import '../widgets/custom_navigation_button.dart';
 import 'package:logger/logger.dart';
 import 'dart:convert';
-import '../widgets/dialogs/filter_dialog.dart';
 
 class SetLandTypeModeScreen extends StatefulWidget {
   final DatabaseService dbService;
   final Logger logger;
 
   const SetLandTypeModeScreen({
-    super.key,
+    Key? key,
     required this.dbService,
     required this.logger,
-  });
+  }) : super(key: key);
 
   @override
   _SetLandTypeModeScreenState createState() => _SetLandTypeModeScreenState();
@@ -35,6 +35,7 @@ class _SetLandTypeModeScreenState extends State<SetLandTypeModeScreen> {
   String? _selectedRegion;
   String? _selectedLocalAuthorityDistrict;
   String? _selectedLandType;
+  bool _buaOnly = false; // New state variable for BUA Only
   int _totalParcels = 0;
   int _pageNumber = 0;
   final int _pageSize = 100;
@@ -151,6 +152,7 @@ class _SetLandTypeModeScreenState extends State<SetLandTypeModeScreen> {
         minAcres: _minAcres,
         maxAcres: _maxAcres,
         landType: landTypeFilter,
+        buaOnly: _buaOnly, // Pass BUA Only filter
       );
 
       // Fetch first page of parcels based on filters
@@ -165,6 +167,7 @@ class _SetLandTypeModeScreenState extends State<SetLandTypeModeScreen> {
         minAcres: _minAcres,
         maxAcres: _maxAcres,
         landType: landTypeFilter,
+        buaOnly: _buaOnly, // Pass BUA Only filter
       );
 
       _pageCache[_pageNumber] = parcels;
@@ -260,7 +263,7 @@ class _SetLandTypeModeScreenState extends State<SetLandTypeModeScreen> {
             FillLayer(
               id: 'my-fill-layer',
               sourceId: 'my-geojson-source',
-              fillColor: Colors.green.value,
+              fillColor: Colors.red.value,
               fillOpacity: 0.5,
             ),
             LayerPosition(above: existingLayerId),
@@ -273,7 +276,7 @@ class _SetLandTypeModeScreenState extends State<SetLandTypeModeScreen> {
             FillLayer(
               id: 'my-fill-layer',
               sourceId: 'my-geojson-source',
-              fillColor: Colors.green.value,
+              fillColor: Colors.red.value,
               fillOpacity: 0.5,
             ),
           );
@@ -507,6 +510,7 @@ class _SetLandTypeModeScreenState extends State<SetLandTypeModeScreen> {
           initialSelectedRegion: _selectedRegion,
           initialSelectedLocalAuthorityDistrict: _selectedLocalAuthorityDistrict,
           initialSelectedLandType: _selectedLandType,
+          initialBUAOnly: _buaOnly, // Pass initial BUA Only state
           onApply: ({
             double? minAcres,
             double? maxAcres,
@@ -515,6 +519,7 @@ class _SetLandTypeModeScreenState extends State<SetLandTypeModeScreen> {
             String? selectedRegion,
             String? selectedLocalAuthorityDistrict,
             String? selectedLandType,
+            bool buaOnly = false, // Receive BUA Only state
           }) {
             if (minAcres != null &&
                 maxAcres != null &&
@@ -533,6 +538,7 @@ class _SetLandTypeModeScreenState extends State<SetLandTypeModeScreen> {
               _selectedLandType = selectedLandType;
               _minAcres = minAcres;
               _maxAcres = maxAcres;
+              _buaOnly = buaOnly; // Update BUA Only state
             });
             _applyFiltersAndRefresh();
             Navigator.of(context).pop();
@@ -540,6 +546,35 @@ class _SetLandTypeModeScreenState extends State<SetLandTypeModeScreen> {
         );
       },
     );
+  }
+
+  @override
+  void dispose() {
+    widget.dbService.close().catchError((e) {
+      widget.logger.e('Error closing database connection: $e');
+    });
+
+    super.dispose();
+  }
+
+  void _onMapCreated(MapboxMap map) async {
+    _mapboxMap = map;
+
+    try {
+      await _mapboxMap.loadStyleURI(MapboxStyles.SATELLITE_STREETS);
+    } catch (e) {
+      widget.logger.e('Error during map creation: $e');
+      if (!mounted) return;
+      _showErrorSnackbar('Failed to load map.');
+    }
+  }
+
+  void _onStyleLoaded(StyleLoadedEventData eventData) async {
+    widget.logger.d('Style has been loaded.');
+
+    if (_geoJsonData != null && _filteredFeatures.isNotEmpty) {
+      await _addGeoJsonLayer();
+    }
   }
 
   Future<void> _assignLandType(String landType) async {
@@ -600,26 +635,6 @@ class _SetLandTypeModeScreenState extends State<SetLandTypeModeScreen> {
     }
   }
 
-  void _onMapCreated(MapboxMap map) async {
-    _mapboxMap = map;
-
-    try {
-      await _mapboxMap.loadStyleURI(MapboxStyles.SATELLITE_STREETS);
-    } catch (e) {
-      widget.logger.e('Error during map creation: $e');
-      if (!mounted) return;
-      _showErrorSnackbar('Failed to load map.');
-    }
-  }
-
-  void _onStyleLoaded(StyleLoadedEventData eventData) async {
-    widget.logger.d('Style has been loaded.');
-
-    if (_geoJsonData != null && _filteredFeatures.isNotEmpty) {
-      await _addGeoJsonLayer();
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     CameraOptions cameraOptions = CameraOptions(
@@ -650,6 +665,20 @@ class _SetLandTypeModeScreenState extends State<SetLandTypeModeScreen> {
                   const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
             ),
           ),
+          if (_buaOnly)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
+              child: Row(
+                children: const [
+                  Icon(Icons.check_box, color: Colors.blue),
+                  SizedBox(width: 8),
+                  Text(
+                    'BUA Only Filter Applied',
+                    style: TextStyle(color: Colors.blue, fontWeight: FontWeight.w500),
+                  ),
+                ],
+              ),
+            ),
           Expanded(
             child: MapWidget(
               key: const ValueKey("mapWidget"),

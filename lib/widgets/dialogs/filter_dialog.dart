@@ -17,6 +17,7 @@ class FilterDialog extends StatefulWidget {
   final String? initialSelectedRegion;
   final String? initialSelectedLocalAuthorityDistrict;
   final String? initialSelectedLandType;
+  final bool initialBUAOnly; // New parameter for BUA Only
   final Function({
     double? minAcres,
     double? maxAcres,
@@ -25,6 +26,7 @@ class FilterDialog extends StatefulWidget {
     String? selectedRegion,
     String? selectedLocalAuthorityDistrict,
     String? selectedLandType,
+    bool buaOnly, // New parameter
   }) onApply;
 
   const FilterDialog({
@@ -41,6 +43,7 @@ class FilterDialog extends StatefulWidget {
     this.initialSelectedRegion,
     this.initialSelectedLocalAuthorityDistrict,
     this.initialSelectedLandType,
+    this.initialBUAOnly = false, // Default value
     required this.onApply,
   });
 
@@ -56,6 +59,7 @@ class _FilterDialogState extends State<FilterDialog> {
   String? _selectedRegion;
   String? _selectedLocalAuthorityDistrict;
   String? _selectedLandType;
+  bool _buaOnly = false; // New state variable
 
   final TextEditingController _minAcresController = TextEditingController();
   final TextEditingController _maxAcresController = TextEditingController();
@@ -71,6 +75,7 @@ class _FilterDialogState extends State<FilterDialog> {
     _selectedLocalAuthorityDistrict =
         widget.initialSelectedLocalAuthorityDistrict;
     _selectedLandType = widget.initialSelectedLandType;
+    _buaOnly = widget.initialBUAOnly; // Initialize BUA Only
 
     _minAcresController.text =
         _minAcres != null ? _minAcres.toString() : '';
@@ -104,6 +109,7 @@ class _FilterDialogState extends State<FilterDialog> {
       selectedRegion: _selectedRegion,
       selectedLocalAuthorityDistrict: _selectedLocalAuthorityDistrict,
       selectedLandType: _selectedLandType,
+      buaOnly: _buaOnly, // Pass BUA Only state
     );
   }
 
@@ -116,6 +122,7 @@ class _FilterDialogState extends State<FilterDialog> {
       _selectedRegion = null;
       _selectedLocalAuthorityDistrict = null;
       _selectedLandType = null;
+      _buaOnly = false; // Reset BUA Only
       _minAcresController.text = '';
       _maxAcresController.text = '';
     });
@@ -127,6 +134,7 @@ class _FilterDialogState extends State<FilterDialog> {
       selectedRegion: null,
       selectedLocalAuthorityDistrict: null,
       selectedLandType: null,
+      buaOnly: false, // Reset BUA Only
     );
     Navigator.of(context).pop(); // Close the dialog
   }
@@ -260,6 +268,18 @@ class _FilterDialogState extends State<FilterDialog> {
                   _maxAcres = double.tryParse(value);
                 });
               },
+            ),
+            const SizedBox(height: 10),
+            // BUA Only Checkbox
+            CheckboxListTile(
+              title: const Text('BUA Only'),
+              value: _buaOnly,
+              onChanged: (bool? value) {
+                setState(() {
+                  _buaOnly = value ?? false;
+                });
+              },
+              controlAffinity: ListTileControlAffinity.leading,
             ),
           ],
         ),

@@ -60,7 +60,7 @@ class DatabaseService {
     }
   }
 
-  /// Fetches parcels with optional filtering and pagination, including land type filtering.
+  /// Fetches parcels with optional filtering and pagination, including land type and BUA filtering.
   Future<List<Map<String, dynamic>>> fetchParcels({
     required int pageNumber,
     required int pageSize,
@@ -70,7 +70,8 @@ class DatabaseService {
     String? localAuthorityDistrictName,
     double? minAcres,
     double? maxAcres,
-    String? landType, // New parameter for land type
+    String? landType, // Existing parameter for land type
+    bool buaOnly = false, // New parameter for BUA Only
   }) async {
     final offset = pageNumber * pageSize;
 
@@ -134,6 +135,10 @@ class DatabaseService {
       }
     }
 
+    if (buaOnly) {
+      whereClauses.add('bua.built_up_area_name IS NOT NULL');
+    }
+
     if (whereClauses.isNotEmpty) {
       query += ' WHERE ${whereClauses.join(' AND ')}';
     }
@@ -154,7 +159,7 @@ class DatabaseService {
     }
   }
 
-  /// Retrieves the total number of parcels with optional filtering, including land type filtering.
+  /// Retrieves the total number of parcels with optional filtering, including land type and BUA filtering.
   Future<int> getTotalParcels({
     String? countyName,
     String? builtUpAreaName,
@@ -162,7 +167,8 @@ class DatabaseService {
     String? localAuthorityDistrictName,
     double? minAcres,
     double? maxAcres,
-    String? landType, // New parameter for land type
+    String? landType, // Existing parameter for land type
+    bool buaOnly = false, // New parameter for BUA Only
   }) async {
     String query = '''
       SELECT COUNT(*) 
@@ -209,6 +215,10 @@ class DatabaseService {
         whereClauses.add('parcel_land_types.land_type = @landType');
         substitutionValues['landType'] = landType; // String
       }
+    }
+
+    if (buaOnly) {
+      whereClauses.add('bua.built_up_area_name IS NOT NULL');
     }
 
     if (whereClauses.isNotEmpty) {
@@ -416,6 +426,14 @@ class DatabaseService {
   }
 
   /// Assigns a land type to a parcel with validation.
+  ///
+  /// Parameters:
+  /// - [inspireid]: The unique identifier of the parcel.
+  /// - [landType]: The land type to assign.
+  ///
+  /// Throws:
+  /// - [Exception] if the land type is invalid.
+  /// - Any database-related exceptions.
   Future<void> assignLandType(String inspireid, String landType) async {
     // Validate land type
     if (!_isValidLandType(landType)) {
@@ -426,21 +444,19 @@ class DatabaseService {
     String query = '''
       INSERT INTO parcel_land_types (inspireid, land_type)
       VALUES (@inspireid, @landType)
-      ON CONFLICT (inspireid) DO UPDATE
-      SET land_type = @landType, assigned_at = CURRENT_TIMESTAMP;
+      ON CONFLICT (inspireid) 
+      DO UPDATE SET land_type = @landType;
     ''';
-
-    Map<String, Object?> substitutionValues = {
-      'inspireid': inspireid, // Adjust type if inspireid is not a String
-      'landType': landType,
-    };
 
     try {
       await _connection.execute(
         Sql.named(query),
-        parameters: substitutionValues,
+        parameters: {
+          'inspireid': inspireid, // Adjust type if inspireid is not a String
+          'landType': landType,
+        },
       );
-      logger.i('Assigned land type "$landType" to parcel $inspireid');
+      logger.i('Assigned land type "$landType" to parcel "$inspireid".');
     } catch (e) {
       logger.e('Error assigning land type: $e');
       rethrow; // Re-throw the exception to preserve the stack trace
