@@ -14,6 +14,9 @@ class DatabaseService {
   // Define allowed land types for validation
   final List<String> _allowedLandTypes = ['Greenfield', 'Brownfield', 'Unsure', 'NA'];
 
+  // Define allowed statuses for Aldi/Lidl mode
+  final List<String> _allowedStatuses = ['Developed', 'Vacant Land', 'Unsure', 'NA'];
+
   DatabaseService._internal();
 
   /// Establishes a connection to the PostgreSQL database.
@@ -463,8 +466,211 @@ class DatabaseService {
     }
   }
 
+  /// Assigns a land status to a parcel in the Aldi_Lidl_LandTypeStatus table.
+  ///
+  /// Parameters:
+  /// - [inspireid]: The unique identifier of the parcel.
+  /// - [status]: The status to assign ('Developed', 'Vacant Land', 'Unsure' or 'NA').
+  ///
+  /// Throws:
+  /// - [Exception] if the status is invalid.
+  /// - Any database-related exceptions.
+  Future<void> assignLandStatus(int inspireid, String status) async {
+    // Validate status
+    if (!_isValidStatus(status)) {
+      logger.e('Invalid status attempted to assign: $status');
+      throw Exception('Invalid status: $status');
+    }
+
+    String query = '''
+      INSERT INTO "Aldi_Lidl_LandTypeStatus" ("inspireid", "status")
+      VALUES (@inspireid, @status)
+      ON CONFLICT ("inspireid") 
+      DO UPDATE SET "status" = @status,
+                    "assigned_at" = CURRENT_TIMESTAMP;
+    ''';
+
+    try {
+      await _connection.execute(
+        Sql.named(query),
+        parameters: {
+          'inspireid': inspireid,
+          'status': status,
+        },
+      );
+      logger.i('Assigned status "$status" to parcel $inspireid.');
+    } catch (e) {
+      logger.e('Error assigning land status: $e');
+      rethrow; // Re-throw the exception to preserve the stack trace
+    }
+  }
+
+  /// Fetches parcels for the "Lidl/Aldi Site Finder" mode with optional filtering and pagination.
+  Future<List<Map<String, dynamic>>> fetchParcelsForAldiLidl({
+    required int pageNumber,
+    required int pageSize,
+    String? builtUpAreaName,
+    double? minAcres,
+    double? maxAcres,
+    String? status, // Status filter: 'Developed', 'Vacant Land', 'Unsure' or 'NA'
+  }) async {
+    final offset = pageNumber * pageSize;
+
+    String query = '''
+      SELECT 
+          p.inspireid,
+          ST_AsGeoJSON(p.geom) AS geom,
+          p.fid,
+          p.acres,
+          p.bua,
+          ls.status,
+          ls.assigned_at
+      FROM 
+          "BUA_ALDI_LIDL" p
+      LEFT JOIN "Aldi_Lidl_LandTypeStatus" ls ON p.inspireid = ls.inspireid
+    ''';
+
+    List<String> whereClauses = [];
+    Map<String, Object?> substitutionValues = {
+      'limit': pageSize,
+      'offset': offset,
+    };
+
+    if (builtUpAreaName != null && builtUpAreaName.isNotEmpty) {
+      whereClauses.add('p.bua = @builtUpAreaName');
+      substitutionValues['builtUpAreaName'] = builtUpAreaName; // String
+    }
+    if (minAcres != null) {
+      whereClauses.add('p.acres >= @minAcres');
+      substitutionValues['minAcres'] = minAcres; // double
+    }
+    if (maxAcres != null) {
+      whereClauses.add('p.acres <= @maxAcres');
+      substitutionValues['maxAcres'] = maxAcres; // double
+    }
+    if (status != null && status.isNotEmpty) {
+      whereClauses.add('ls.status = @status');
+      substitutionValues['status'] = status; // String
+    }
+
+    if (whereClauses.isNotEmpty) {
+      query += ' WHERE ${whereClauses.join(' AND ')}';
+    }
+
+    query += ' ORDER BY p.inspireid ASC LIMIT @limit OFFSET @offset;';
+
+    try {
+      final result = await _connection.execute(
+        Sql.named(query),
+        parameters: substitutionValues,
+      );
+
+      return result.map((row) {
+        return {
+          'inspireid': row.toColumnMap()['inspireid'],
+          'geom': row.toColumnMap()['geom'],
+          'fid': row.toColumnMap()['fid'],
+          'acres': row.toColumnMap()['acres'],
+          'bua': row.toColumnMap()['bua'],
+          'status': row.toColumnMap()['status'],
+          'assigned_at': row.toColumnMap()['assigned_at'],
+        };
+      }).toList();
+    } catch (e) {
+      logger.e('Error fetching parcels for Aldi/Lidl: $e');
+      return [];
+    }
+  }
+
+  /// Retrieves the total number of parcels for the "Lidl/Aldi Site Finder" mode with optional filtering.
+  Future<int> getTotalParcelsForAldiLidl({
+    String? builtUpAreaName,
+    double? minAcres,
+    double? maxAcres,
+    String? status, // Status filter: 'Developed', 'Vacant Land', 'Unsure' or 'NA'
+  }) async {
+    String query = '''
+      SELECT COUNT(*) 
+      FROM "BUA_ALDI_LIDL" p
+      LEFT JOIN "Aldi_Lidl_LandTypeStatus" ls ON p.inspireid = ls.inspireid
+    ''';
+
+    List<String> whereClauses = [];
+    Map<String, Object?> substitutionValues = {};
+
+    if (builtUpAreaName != null && builtUpAreaName.isNotEmpty) {
+      whereClauses.add('p.bua = @builtUpAreaName');
+      substitutionValues['builtUpAreaName'] = builtUpAreaName; // String
+    }
+    if (minAcres != null) {
+      whereClauses.add('p.acres >= @minAcres');
+      substitutionValues['minAcres'] = minAcres; // double
+    }
+    if (maxAcres != null) {
+      whereClauses.add('p.acres <= @maxAcres');
+      substitutionValues['maxAcres'] = maxAcres; // double
+    }
+    if (status != null && status.isNotEmpty) {
+      whereClauses.add('ls.status = @status');
+      substitutionValues['status'] = status; // String
+    }
+
+    if (whereClauses.isNotEmpty) {
+      query += ' WHERE ${whereClauses.join(' AND ')}';
+    }
+
+    try {
+      final result = await _connection.execute(
+        Sql.named(query),
+        parameters: substitutionValues,
+      );
+
+      // PostgreSQL COUNT(*) returns a single row with a single column
+      if (result.isNotEmpty && result.first.isNotEmpty) {
+        final countValue = result.first[0];
+        if (countValue is int) {
+          return countValue;
+        } else if (countValue is String) {
+          return int.parse(countValue);
+        } else {
+          throw FormatException('Unexpected type for COUNT(*) result: ${countValue.runtimeType}');
+        }
+      } else {
+        return 0;
+      }
+    } catch (e) {
+      logger.e('Error fetching total parcels count for Aldi/Lidl: $e');
+      return 0;
+    }
+  }
+
+  /// Fetches distinct BUAs from the BUA_ALDI_LIDL table for autocomplete.
+  Future<List<String>> fetchDistinctBUAsForAldiLidl() async {
+    String query = '''
+      SELECT DISTINCT bua
+      FROM "BUA_ALDI_LIDL"
+      WHERE bua IS NOT NULL
+      ORDER BY bua ASC;
+    ''';
+
+    try {
+      final result = await _connection.execute(
+        Sql.named(query),
+      );
+      return result.map((row) => row.toColumnMap()['bua'] as String).toList();
+    } catch (e) {
+      logger.e('Error fetching distinct BUAs for Aldi/Lidl: $e');
+      return [];
+    }
+  }
+
   /// Validates if the provided land type is allowed.
   bool _isValidLandType(String landType) {
     return _allowedLandTypes.contains(landType);
+  }
+
+  /// Validates if the provided status is allowed.
+  bool _isValidStatus(String status) {
+    return _allowedStatuses.contains(status);
   }
 }

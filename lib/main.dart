@@ -1,4 +1,4 @@
-// main.dart
+// lib/main.dart
 
 import 'package:flutter/material.dart';
 import 'package:logger/logger.dart';
@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import 'services/database_service.dart';
 import 'screens/view_mode_screen.dart';
 import 'screens/set_land_type_mode_screen.dart';
+import 'screens/lidl_aldi_finder_screen.dart'; // Import the new screen
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
 
 void main() {
@@ -47,6 +48,7 @@ class MyApp extends StatelessWidget {
 enum AppMode {
   view,
   setLandType,
+  lidlAldiFinder, // New mode
 }
 
 class ModeSelectionScreen extends StatefulWidget {
@@ -67,7 +69,18 @@ class _ModeSelectionScreenState extends State<ModeSelectionScreen> {
   }
 
   void _showModeChangeSnackbar(AppMode mode) {
-    String modeName = mode == AppMode.view ? 'View Mode' : 'Set Land Type Mode';
+    String modeName;
+    switch (mode) {
+      case AppMode.view:
+        modeName = 'View Mode';
+        break;
+      case AppMode.setLandType:
+        modeName = 'Set Land Type Mode';
+        break;
+      case AppMode.lidlAldiFinder:
+        modeName = 'Lidl/Aldi Site Finder';
+        break;
+    }
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('Switched to $modeName')),
     );
@@ -93,15 +106,21 @@ class _ModeSelectionScreenState extends State<ModeSelectionScreen> {
                 value: AppMode.setLandType,
                 child: Text('Set Land Type Mode'),
               ),
+              const PopupMenuItem<AppMode>(
+                value: AppMode.lidlAldiFinder,
+                child: Text('Lidl/Aldi Site Finder'),
+              ),
             ],
           ),
         ],
       ),
       body: _currentMode == AppMode.view
           ? ViewModeScreen(dbService: dbService, logger: logger)
-          : SetLandTypeModeScreen(dbService: dbService, logger: logger),
+          : _currentMode == AppMode.setLandType
+              ? SetLandTypeModeScreen(dbService: dbService, logger: logger)
+              : LidlAldiFinderScreen(dbService: dbService, logger: logger), // New screen
       bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _currentMode == AppMode.view ? 0 : 1,
+        currentIndex: _currentMode.index,
         items: const [
           BottomNavigationBarItem(
             icon: Icon(Icons.visibility),
@@ -111,13 +130,27 @@ class _ModeSelectionScreenState extends State<ModeSelectionScreen> {
             icon: Icon(Icons.edit),
             label: 'Set Land Type',
           ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.store),
+            label: 'Lidl/Aldi Finder',
+          ),
         ],
         onTap: (index) {
-          if (index == 0) {
-            _switchMode(AppMode.view);
-          } else if (index == 1) {
-            _switchMode(AppMode.setLandType);
+          AppMode selectedMode;
+          switch (index) {
+            case 0:
+              selectedMode = AppMode.view;
+              break;
+            case 1:
+              selectedMode = AppMode.setLandType;
+              break;
+            case 2:
+              selectedMode = AppMode.lidlAldiFinder;
+              break;
+            default:
+              selectedMode = AppMode.view;
           }
+          _switchMode(selectedMode);
         },
       ),
     );
