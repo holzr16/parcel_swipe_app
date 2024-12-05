@@ -512,7 +512,7 @@ class DatabaseService {
     String? builtUpAreaName,
     double? minAcres,
     double? maxAcres,
-    String? status, // Status filter: 'Developed', 'Vacant Land', 'Unsure' or 'NA'
+    String? status, // Status filter: 'Developed', 'Vacant Land', 'Unsure' or 'NA', 'Unseen'
   }) async {
     final offset = pageNumber * pageSize;
 
@@ -523,8 +523,7 @@ class DatabaseService {
           p.fid,
           p.acres,
           p.bua,
-          ls.status,
-          ls.assigned_at
+          ls.status
       FROM 
           "BUA_ALDI_LIDL" p
       LEFT JOIN "Aldi_Lidl_LandTypeStatus" ls ON p.inspireid = ls.inspireid
@@ -549,8 +548,12 @@ class DatabaseService {
       substitutionValues['maxAcres'] = maxAcres; // double
     }
     if (status != null && status.isNotEmpty) {
-      whereClauses.add('ls.status = @status');
-      substitutionValues['status'] = status; // String
+      if (status == 'Unseen') {
+        whereClauses.add('ls.status IS NULL');
+      } else {
+        whereClauses.add('ls.status = @status');
+        substitutionValues['status'] = status; // String
+      }
     }
 
     if (whereClauses.isNotEmpty) {
@@ -572,8 +575,7 @@ class DatabaseService {
           'fid': row.toColumnMap()['fid'],
           'acres': row.toColumnMap()['acres'],
           'bua': row.toColumnMap()['bua'],
-          'status': row.toColumnMap()['status'],
-          'assigned_at': row.toColumnMap()['assigned_at'],
+          'status': row.toColumnMap()['status'] ?? 'Unseen',
         };
       }).toList();
     } catch (e) {
@@ -587,7 +589,7 @@ class DatabaseService {
     String? builtUpAreaName,
     double? minAcres,
     double? maxAcres,
-    String? status, // Status filter: 'Developed', 'Vacant Land', 'Unsure' or 'NA'
+    String? status, // Status filter: 'Developed', 'Vacant Land', 'Unsure' or 'NA', 'Unseen'
   }) async {
     String query = '''
       SELECT COUNT(*) 
@@ -611,8 +613,12 @@ class DatabaseService {
       substitutionValues['maxAcres'] = maxAcres; // double
     }
     if (status != null && status.isNotEmpty) {
-      whereClauses.add('ls.status = @status');
-      substitutionValues['status'] = status; // String
+      if (status == 'Unseen') {
+        whereClauses.add('ls.status IS NULL');
+      } else {
+        whereClauses.add('ls.status = @status');
+        substitutionValues['status'] = status; // String
+      }
     }
 
     if (whereClauses.isNotEmpty) {

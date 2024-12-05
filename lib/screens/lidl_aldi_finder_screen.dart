@@ -79,7 +79,7 @@ class _LidlAldiFinderScreenState extends State<LidlAldiFinderScreen> {
   }
 
   Future<void> _fetchStatusOptions() async {
-    _statusOptions = ['Developed', 'Vacant Land', 'Unsure', 'NA'];
+    _statusOptions = ['Developed', 'Vacant Land', 'Unsure', 'NA', 'Unseen'];
     setState(() {});
   }
 
@@ -180,7 +180,6 @@ class _LidlAldiFinderScreenState extends State<LidlAldiFinderScreen> {
               "inspireid": feature['inspireid'],
               "acres": feature['acres'],
               "status": feature['status'],
-              "assigned_at": feature['assigned_at'],
             },
             "geometry": jsonDecode(feature['geom']),
           };
@@ -607,7 +606,9 @@ class _LidlAldiFinderScreenState extends State<LidlAldiFinderScreen> {
             padding: const EdgeInsets.all(8.0),
             child: Wrap(
               spacing: 20,
-              children: _statusOptions.map((status) {
+              children: _statusOptions
+                  .where((status) => status != 'Unseen') // Exclude 'Unseen' from assignable options
+                  .map((status) {
                 return CustomNavigationButton(
                   label: status,
                   onPressed: () => _assignStatus(status),
@@ -615,6 +616,7 @@ class _LidlAldiFinderScreenState extends State<LidlAldiFinderScreen> {
               }).toList(),
             ),
           ),
+
           if (_isLoading)
             const Padding(
               padding: EdgeInsets.all(8.0),
