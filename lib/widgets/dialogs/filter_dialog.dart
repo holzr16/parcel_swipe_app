@@ -1,272 +1,402 @@
 // lib/widgets/dialogs/filter_dialog.dart
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../../models/parcel_mode.dart';
+import 'package:logger/logger.dart'; // Ensure you have a logger instance
 
 class FilterDialog extends StatefulWidget {
-  // Define the necessary parameters and callbacks
   final List<String> countyOptions;
   final List<String> builtUpAreaOptions;
   final List<String> regionOptions;
   final List<String> localAuthorityDistrictOptions;
   final List<String> landTypeOptions;
+  final ParcelMode currentMode;
   final double? initialMinAcres;
   final double? initialMaxAcres;
   final String? initialSelectedCounty;
   final String? initialSelectedBuiltUpArea;
   final String? initialSelectedRegion;
   final String? initialSelectedLocalAuthorityDistrict;
-  final String? initialSelectedLandType;
-  final bool initialBUAOnly; // New parameter for BUA Only
-  final Function({
-    double? minAcres,
-    double? maxAcres,
-    String? selectedCounty,
-    String? selectedBuiltUpArea,
-    String? selectedRegion,
-    String? selectedLocalAuthorityDistrict,
-    String? selectedLandType,
-    bool buaOnly, // New parameter
-  }) onApply;
+  final String? initialSelectedStatus;
+  final bool initialBUAOnly;
 
   const FilterDialog({
-    super.key,
+    Key? key,
     required this.countyOptions,
     required this.builtUpAreaOptions,
     required this.regionOptions,
     required this.localAuthorityDistrictOptions,
     required this.landTypeOptions,
+    required this.currentMode,
     this.initialMinAcres,
     this.initialMaxAcres,
     this.initialSelectedCounty,
     this.initialSelectedBuiltUpArea,
     this.initialSelectedRegion,
     this.initialSelectedLocalAuthorityDistrict,
-    this.initialSelectedLandType,
-    this.initialBUAOnly = false, // Default value
-    required this.onApply,
-  });
+    this.initialSelectedStatus,
+    this.initialBUAOnly = false,
+  }) : super(key: key);
 
   @override
-  _FilterDialogState createState() => _FilterDialogState();
+  State<FilterDialog> createState() => _FilterDialogState();
 }
 
 class _FilterDialogState extends State<FilterDialog> {
-  double? _minAcres;
-  double? _maxAcres;
+  final Logger _logger = Logger(); // Initialize a logger instance
+
+  ParcelMode _selectedMode = ParcelMode.view; // Mode selection
   String? _selectedCounty;
   String? _selectedBuiltUpArea;
   String? _selectedRegion;
   String? _selectedLocalAuthorityDistrict;
-  String? _selectedLandType;
-  bool _buaOnly = false; // New state variable
+  String? _selectedStatus;
+  double? _minAcres;
+  double? _maxAcres;
+  bool _buaOnly = false;
 
-  final TextEditingController _minAcresController = TextEditingController();
-  final TextEditingController _maxAcresController = TextEditingController();
+  late List<String> _statusOptions;
+
+  // Controllers for Autocomplete fields
+  late TextEditingController _countyController;
+  late TextEditingController _builtUpAreaController;
+  late TextEditingController _regionController;
+  late TextEditingController _ladController;
+  late TextEditingController _minAcresController;
+  late TextEditingController _maxAcresController;
 
   @override
   void initState() {
     super.initState();
-    _minAcres = widget.initialMinAcres;
-    _maxAcres = widget.initialMaxAcres;
+    _selectedMode = widget.currentMode;
     _selectedCounty = widget.initialSelectedCounty;
     _selectedBuiltUpArea = widget.initialSelectedBuiltUpArea;
     _selectedRegion = widget.initialSelectedRegion;
-    _selectedLocalAuthorityDistrict =
-        widget.initialSelectedLocalAuthorityDistrict;
-    _selectedLandType = widget.initialSelectedLandType;
-    _buaOnly = widget.initialBUAOnly; // Initialize BUA Only
+    _selectedLocalAuthorityDistrict = widget.initialSelectedLocalAuthorityDistrict;
+    _selectedStatus = widget.initialSelectedStatus;
+    _minAcres = widget.initialMinAcres;
+    _maxAcres = widget.initialMaxAcres;
+    _buaOnly = widget.initialBUAOnly;
 
-    _minAcresController.text =
-        _minAcres != null ? _minAcres.toString() : '';
-    _maxAcresController.text =
-        _maxAcres != null ? _maxAcres.toString() : '';
+    _statusOptions = _getStatusOptionsForMode(_selectedMode);
+
+    // Initialize controllers with initial values
+    _countyController = TextEditingController(text: _selectedCounty);
+    _builtUpAreaController = TextEditingController(text: _selectedBuiltUpArea);
+    _regionController = TextEditingController(text: _selectedRegion);
+    _ladController = TextEditingController(text: _selectedLocalAuthorityDistrict);
+    _minAcresController = TextEditingController(
+        text: _minAcres != null ? _minAcres!.toStringAsFixed(2) : '');
+    _maxAcresController = TextEditingController(
+        text: _maxAcres != null ? _maxAcres!.toStringAsFixed(2) : '');
+  }
+
+  List<String> _getStatusOptionsForMode(ParcelMode mode) {
+    switch (mode) {
+      case ParcelMode.view:
+        return ['Saved', 'Dismissed', 'Unseen'];
+      case ParcelMode.landType:
+        return ['NA', 'Unsure', 'Vacant Land', 'Developed', 'Unseen'];
+      case ParcelMode.landSubType:
+        return ['Brownfield', 'Greenfield', 'NA', 'Unsure', 'Unseen'];
+      default:
+        return ['Unseen'];
+    }
+  }
+
+  void _onModeChanged(ParcelMode? mode) {
+    if (mode != null) {
+      setState(() {
+        _selectedMode = mode;
+        _selectedStatus = null; // Reset status when mode changes
+        _statusOptions = _getStatusOptionsForMode(_selectedMode);
+      });
+      _logger.d('Mode changed to $_selectedMode');
+    }
+  }
+
+  void _resetFilters() {
+    setState(() {
+      _selectedMode = ParcelMode.view;
+      _selectedCounty = null;
+      _selectedBuiltUpArea = null;
+      _selectedRegion = null;
+      _selectedLocalAuthorityDistrict = null;
+      _selectedStatus = null;
+      _minAcres = null;
+      _maxAcres = null;
+      _buaOnly = false;
+      _statusOptions = _getStatusOptionsForMode(_selectedMode);
+
+      // Reset controllers
+      _countyController.text = '';
+      _builtUpAreaController.text = '';
+      _regionController.text = '';
+      _ladController.text = '';
+      _minAcresController.text = '';
+      _maxAcresController.text = '';
+    });
+    _logger.d('Filters have been reset');
   }
 
   @override
   void dispose() {
+    _countyController.dispose();
+    _builtUpAreaController.dispose();
+    _regionController.dispose();
+    _ladController.dispose();
     _minAcresController.dispose();
     _maxAcresController.dispose();
     super.dispose();
   }
 
   void _applyFilters() {
-    if (_minAcres != null &&
-        _maxAcres != null &&
-        _minAcres! > _maxAcres!) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('Min Acres cannot be greater than Max Acres')),
-      );
-      return;
-    }
+    _logger.d('Applying filters: Mode=$_selectedMode, '
+        'County=$_selectedCounty, '
+        'BuiltUpArea=$_selectedBuiltUpArea, '
+        'Region=$_selectedRegion, '
+        'LocalAuthorityDistrict=$_selectedLocalAuthorityDistrict, '
+        'Status=$_selectedStatus, '
+        'MinAcres=$_minAcres, '
+        'MaxAcres=$_maxAcres, '
+        'BUAOnly=$_buaOnly');
 
-    widget.onApply(
-      minAcres: _minAcres,
-      maxAcres: _maxAcres,
-      selectedCounty: _selectedCounty,
-      selectedBuiltUpArea: _selectedBuiltUpArea,
-      selectedRegion: _selectedRegion,
-      selectedLocalAuthorityDistrict: _selectedLocalAuthorityDistrict,
-      selectedLandType: _selectedLandType,
-      buaOnly: _buaOnly, // Pass BUA Only state
-    );
-  }
-
-  void _clearFilters() {
-    setState(() {
-      _minAcres = null;
-      _maxAcres = null;
-      _selectedCounty = null;
-      _selectedBuiltUpArea = null;
-      _selectedRegion = null;
-      _selectedLocalAuthorityDistrict = null;
-      _selectedLandType = null;
-      _buaOnly = false; // Reset BUA Only
-      _minAcresController.text = '';
-      _maxAcresController.text = '';
+    Navigator.of(context).pop({
+      'selectedMode': _selectedMode,
+      'minAcres': _minAcres,
+      'maxAcres': _maxAcres,
+      'selectedCounty': _selectedCounty,
+      'selectedBuiltUpArea': _selectedBuiltUpArea,
+      'selectedRegion': _selectedRegion,
+      'selectedLocalAuthorityDistrict': _selectedLocalAuthorityDistrict,
+      'selectedStatus': _selectedStatus,
+      'buaOnly': _buaOnly,
     });
-    widget.onApply(
-      minAcres: null,
-      maxAcres: null,
-      selectedCounty: null,
-      selectedBuiltUpArea: null,
-      selectedRegion: null,
-      selectedLocalAuthorityDistrict: null,
-      selectedLandType: null,
-      buaOnly: false, // Reset BUA Only
-    );
-    Navigator.of(context).pop(); // Close the dialog
+    _logger.d('Filters applied and dialog closed.');
   }
 
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('Set Filters'),
+      title: const Text('Filter Parcels'),
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // County Filter
-            DropdownButtonFormField<String>(
-              decoration: const InputDecoration(labelText: 'County'),
-              value: _selectedCounty,
-              items: widget.countyOptions
-                  .map((county) => DropdownMenuItem(
-                        value: county,
-                        child: Text(county),
-                      ))
-                  .toList(),
-              onChanged: (value) {
-                setState(() {
-                  _selectedCounty = value;
-                });
-              },
+            // Mode Selection Dropdown
+            DropdownButtonFormField<ParcelMode>(
+              decoration: const InputDecoration(
+                labelText: 'Select Mode',
+                border: OutlineInputBorder(),
+              ),
+              value: _selectedMode,
+              items: ParcelMode.values.map((ParcelMode mode) {
+                return DropdownMenuItem<ParcelMode>(
+                  value: mode,
+                  child: Text(mode.name),
+                );
+              }).toList(),
+              onChanged: _onModeChanged,
               isExpanded: true,
+              hint: const Text('Select Mode'),
             ),
             const SizedBox(height: 10),
-            // Built-Up Area Filter
-            DropdownButtonFormField<String>(
-              decoration: const InputDecoration(labelText: 'Built-Up Area'),
-              value: _selectedBuiltUpArea,
-              items: widget.builtUpAreaOptions
-                  .map((bua) => DropdownMenuItem(
-                        value: bua,
-                        child: Text(bua),
-                      ))
-                  .toList(),
-              onChanged: (value) {
-                setState(() {
-                  _selectedBuiltUpArea = value;
+            // County Autocomplete
+            Autocomplete<String>(
+              optionsBuilder: (TextEditingValue textEditingValue) {
+                if (textEditingValue.text.isEmpty) {
+                  return const Iterable<String>.empty();
+                }
+                return widget.countyOptions.where((String option) {
+                  return option.toLowerCase().contains(
+                      textEditingValue.text.toLowerCase());
                 });
               },
-              isExpanded: true,
+              onSelected: (String selection) {
+                setState(() {
+                  _selectedCounty = selection;
+                  _countyController.text = selection;
+                });
+                _logger.d('Selected County: $selection');
+              },
+              fieldViewBuilder: (BuildContext context,
+                  TextEditingController textEditingController,
+                  FocusNode focusNode,
+                  VoidCallback onFieldSubmitted) {
+                return TextFormField(
+                  controller: _countyController,
+                  focusNode: focusNode,
+                  decoration: const InputDecoration(
+                    labelText: 'County',
+                    border: OutlineInputBorder(),
+                  ),
+                );
+              },
             ),
             const SizedBox(height: 10),
-            // Region Filter
-            DropdownButtonFormField<String>(
-              decoration: const InputDecoration(labelText: 'Region'),
-              value: _selectedRegion,
-              items: widget.regionOptions
-                  .map((region) => DropdownMenuItem(
-                        value: region,
-                        child: Text(region),
-                      ))
-                  .toList(),
-              onChanged: (value) {
-                setState(() {
-                  _selectedRegion = value;
+            // Built-Up Area Autocomplete
+            Autocomplete<String>(
+              optionsBuilder: (TextEditingValue textEditingValue) {
+                if (textEditingValue.text.isEmpty) {
+                  return const Iterable<String>.empty();
+                }
+                return widget.builtUpAreaOptions.where((String option) {
+                  return option.toLowerCase().contains(
+                      textEditingValue.text.toLowerCase());
                 });
               },
-              isExpanded: true,
+              onSelected: (String selection) {
+                setState(() {
+                  _selectedBuiltUpArea = selection;
+                  _builtUpAreaController.text = selection;
+                });
+                _logger.d('Selected Built-Up Area: $selection');
+              },
+              fieldViewBuilder: (BuildContext context,
+                  TextEditingController textEditingController,
+                  FocusNode focusNode,
+                  VoidCallback onFieldSubmitted) {
+                return TextFormField(
+                  controller: _builtUpAreaController,
+                  focusNode: focusNode,
+                  decoration: const InputDecoration(
+                    labelText: 'Built-Up Area',
+                    border: OutlineInputBorder(),
+                  ),
+                );
+              },
             ),
             const SizedBox(height: 10),
-            // Local Authority District Filter
+            // Region Autocomplete
+            Autocomplete<String>(
+              optionsBuilder: (TextEditingValue textEditingValue) {
+                if (textEditingValue.text.isEmpty) {
+                  return const Iterable<String>.empty();
+                }
+                return widget.regionOptions.where((String option) {
+                  return option.toLowerCase().contains(
+                      textEditingValue.text.toLowerCase());
+                });
+              },
+              onSelected: (String selection) {
+                setState(() {
+                  _selectedRegion = selection;
+                  _regionController.text = selection;
+                });
+                _logger.d('Selected Region: $selection');
+              },
+              fieldViewBuilder: (BuildContext context,
+                  TextEditingController textEditingController,
+                  FocusNode focusNode,
+                  VoidCallback onFieldSubmitted) {
+                return TextFormField(
+                  controller: _regionController,
+                  focusNode: focusNode,
+                  decoration: const InputDecoration(
+                    labelText: 'Region',
+                    border: OutlineInputBorder(),
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 10),
+            // Local Authority District Autocomplete
+            Autocomplete<String>(
+              optionsBuilder: (TextEditingValue textEditingValue) {
+                if (textEditingValue.text.isEmpty) {
+                  return const Iterable<String>.empty();
+                }
+                return widget.localAuthorityDistrictOptions.where(
+                    (String option) => option
+                        .toLowerCase()
+                        .contains(textEditingValue.text.toLowerCase()));
+              },
+              onSelected: (String selection) {
+                setState(() {
+                  _selectedLocalAuthorityDistrict = selection;
+                  _ladController.text = selection;
+                });
+                _logger.d('Selected Local Authority District: $selection');
+              },
+              fieldViewBuilder: (BuildContext context,
+                  TextEditingController textEditingController,
+                  FocusNode focusNode,
+                  VoidCallback onFieldSubmitted) {
+                return TextFormField(
+                  controller: _ladController,
+                  focusNode: focusNode,
+                  decoration: const InputDecoration(
+                    labelText: 'Local Authority District',
+                    border: OutlineInputBorder(),
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 10),
+            // Status Dropdown
             DropdownButtonFormField<String>(
               decoration: const InputDecoration(
-                  labelText: 'Local Authority District'),
-              value: _selectedLocalAuthorityDistrict,
-              items: widget.localAuthorityDistrictOptions
-                  .map((lad) => DropdownMenuItem(
-                        value: lad,
-                        child: Text(lad),
+                labelText: 'Status',
+                border: OutlineInputBorder(),
+              ),
+              value: _selectedStatus,
+              items: _statusOptions
+                  .map((status) => DropdownMenuItem(
+                        value: status,
+                        child: Text(status),
                       ))
                   .toList(),
               onChanged: (value) {
                 setState(() {
-                  _selectedLocalAuthorityDistrict = value;
+                  _selectedStatus = value;
                 });
+                _logger.d('Selected Status: $value');
               },
               isExpanded: true,
+              hint: const Text('Select Status'),
             ),
             const SizedBox(height: 10),
-            // Land Type Filter
-            DropdownButtonFormField<String>(
-              decoration: const InputDecoration(labelText: 'Land Type'),
-              value: _selectedLandType,
-              items: widget.landTypeOptions
-                  .map((lt) => DropdownMenuItem(
-                        value: lt,
-                        child: Text(lt),
-                      ))
-                  .toList(),
-              onChanged: (value) {
-                setState(() {
-                  _selectedLandType = value;
-                });
-              },
-              isExpanded: true,
-            ),
-            const SizedBox(height: 10),
-            // Min Acres Filter
-            TextField(
-              decoration: const InputDecoration(labelText: 'Min Acres'),
-              keyboardType:
-                  const TextInputType.numberWithOptions(decimal: true),
-              inputFormatters: [
-                FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*')),
-              ],
+            // Min Acres with input formatter
+            TextFormField(
               controller: _minAcresController,
-              onChanged: (value) {
-                setState(() {
-                  _minAcres = double.tryParse(value);
-                });
-              },
-            ),
-            const SizedBox(height: 10),
-            // Max Acres Filter
-            TextField(
-              decoration: const InputDecoration(labelText: 'Max Acres'),
+              decoration: const InputDecoration(
+                labelText: 'Minimum Acres',
+                border: OutlineInputBorder(),
+              ),
               keyboardType:
                   const TextInputType.numberWithOptions(decimal: true),
               inputFormatters: [
-                FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*')),
+                FilteringTextInputFormatter.allow(
+                    RegExp(r'^\d+\.?\d{0,2}')), // Allow up to 2 decimals
               ],
-              controller: _maxAcresController,
               onChanged: (value) {
                 setState(() {
-                  _maxAcres = double.tryParse(value);
+                  _minAcres =
+                      value.isNotEmpty ? double.tryParse(value) : null;
                 });
+                _logger.d('Minimum Acres set to: $value');
+              },
+            ),
+            const SizedBox(height: 10),
+            // Max Acres with input formatter
+            TextFormField(
+              controller: _maxAcresController,
+              decoration: const InputDecoration(
+                labelText: 'Maximum Acres',
+                border: OutlineInputBorder(),
+              ),
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+              inputFormatters: [
+                FilteringTextInputFormatter.allow(
+                    RegExp(r'^\d+\.?\d{0,2}')), // Allow up to 2 decimals
+              ],
+              onChanged: (value) {
+                setState(() {
+                  _maxAcres =
+                      value.isNotEmpty ? double.tryParse(value) : null;
+                });
+                _logger.d('Maximum Acres set to: $value');
               },
             ),
             const SizedBox(height: 10),
@@ -274,10 +404,11 @@ class _FilterDialogState extends State<FilterDialog> {
             CheckboxListTile(
               title: const Text('BUA Only'),
               value: _buaOnly,
-              onChanged: (bool? value) {
+              onChanged: (value) {
                 setState(() {
                   _buaOnly = value ?? false;
                 });
+                _logger.d('BUA Only set to $_buaOnly');
               },
               controlAffinity: ListTileControlAffinity.leading,
             ),
@@ -286,20 +417,37 @@ class _FilterDialogState extends State<FilterDialog> {
       ),
       actions: [
         TextButton(
-          onPressed: _applyFilters,
-          child: const Text('Set Filters'),
-        ),
-        TextButton(
-          onPressed: _clearFilters,
-          child: const Text('Clear Filters'),
+          onPressed: () {
+            _resetFilters();
+          },
+          child: const Text('Reset'),
         ),
         TextButton(
           onPressed: () {
-            Navigator.of(context).pop(); // Close the dialog without applying
+            if (Navigator.of(context).canPop()) {
+              Navigator.of(context).pop();
+              _logger.d('Filter dialog canceled by user');
+            } else {
+              _logger.w('Attempted to pop dialog but Navigator cannot pop');
+            }
           },
           child: const Text('Cancel'),
         ),
+        ElevatedButton(
+          onPressed: () {
+            _applyFilters(); // Apply and pop the dialog
+          },
+          child: const Text('Apply'),
+        ),
       ],
     );
+  }
+}
+
+// Extension to capitalize the first letter
+extension StringCasingExtension on String {
+  String capitalize() {
+    if (isEmpty) return this;
+    return "${this[0].toUpperCase()}${substring(1).toLowerCase()}";
   }
 }
