@@ -53,8 +53,8 @@ class DatabaseService {
     );
 
     final settings = ConnectionSettings(
-          sslMode: SslMode.disable, // Disable SSL as the server does not support it
-        );
+      sslMode: SslMode.disable, // Disable SSL as the server does not support it
+    );
 
     try {
       logger.i('Attempting to connect to PostgreSQL...');
@@ -187,7 +187,7 @@ class DatabaseService {
     query += ' ORDER BY p.fid ASC LIMIT @limit OFFSET @offset;';
 
     try {
-      List<List<dynamic>> result = await _connection.execute(
+      final result = await _connection.execute(
         Sql.named(query),
         parameters: substitutionValues,
       );
@@ -302,7 +302,7 @@ class DatabaseService {
     }
 
     try {
-      List<List<dynamic>> result = await _connection.execute(
+      final result = await _connection.execute(
         Sql.named(query),
         parameters: substitutionValues,
       );
@@ -328,11 +328,11 @@ class DatabaseService {
     ''';
 
     try {
-      List<List<dynamic>> result = await _connection.execute(
+      final result = await _connection.execute(
         Sql.named(query),
       );
       return result
-          .map((row) => row[0] as String)
+          .map((row) => row.toColumnMap()['county_name'] as String? ?? '')
           .where((name) => name.isNotEmpty)
           .toList();
     } catch (e) {
@@ -351,11 +351,11 @@ class DatabaseService {
     ''';
 
     try {
-      List<List<dynamic>> result = await _connection.execute(
+      final result = await _connection.execute(
         Sql.named(query),
       );
       return result
-          .map((row) => row[0] as String)
+          .map((row) => row.toColumnMap()['bua_name'] as String? ?? '')
           .where((name) => name.isNotEmpty)
           .toList();
     } catch (e) {
@@ -374,11 +374,11 @@ class DatabaseService {
     ''';
 
     try {
-      List<List<dynamic>> result = await _connection.execute(
+      final result = await _connection.execute(
         Sql.named(query),
       );
       return result
-          .map((row) => row[0] as String)
+          .map((row) => row.toColumnMap()['region_name'] as String? ?? '')
           .where((name) => name.isNotEmpty)
           .toList();
     } catch (e) {
@@ -397,11 +397,11 @@ class DatabaseService {
     ''';
 
     try {
-      List<List<dynamic>> result = await _connection.execute(
+      final result = await _connection.execute(
         Sql.named(query),
       );
       return result
-          .map((row) => row[0] as String)
+          .map((row) => row.toColumnMap()['lad_name'] as String? ?? '')
           .where((name) => name.isNotEmpty)
           .toList();
     } catch (e) {
@@ -420,11 +420,11 @@ class DatabaseService {
     ''';
 
     try {
-      List<List<dynamic>> result = await _connection.execute(
+      final result = await _connection.execute(
         Sql.named(query),
       );
       return result
-          .map((row) => row[0] as String)
+          .map((row) => row.toColumnMap()['land_type'] as String? ?? '')
           .where((type) => type.isNotEmpty)
           .toList();
     } catch (e) {
@@ -443,11 +443,11 @@ class DatabaseService {
     ''';
 
     try {
-      List<List<dynamic>> result = await _connection.execute(
+      final result = await _connection.execute(
         Sql.named(query),
       );
       return result
-          .map((row) => row[0] as String)
+          .map((row) => row.toColumnMap()['sub_type'] as String? ?? '')
           .where((type) => type.isNotEmpty)
           .toList();
     } catch (e) {
@@ -561,3 +561,4 @@ class DatabaseService {
     return allowedViewStatuses.contains(status);
   }
 }
+

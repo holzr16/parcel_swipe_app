@@ -469,6 +469,14 @@ class _ParcelScreenState extends State<ParcelScreen> {
           await widget.dbService.fetchDistinctLocalAuthorityDistricts();
       final landTypes = await widget.dbService.fetchDistinctLandTypes();
 
+      widget.logger.d(
+        'Fetched lists: counties=${counties.length}, '
+        'bua=${builtUpAreas.length}, '
+        'regions=${regions.length}, '
+        'lads=${localAuthorities.length}, '
+        'landTypes=${landTypes.length}',
+      );
+
       setState(() {
         _countyOptions = counties;
         _builtUpAreaOptions = builtUpAreas;

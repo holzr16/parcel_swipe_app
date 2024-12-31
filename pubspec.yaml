@@ -36,7 +36,7 @@ dependencies:
   logger: ^2.4.0
   postgrest: ^2.3.0
   mapbox_maps_flutter: ^2.5.0
-  postgres: ^3.4.0
+  postgres: ^3.4.8
   provider: ^6.1.2
 
 
