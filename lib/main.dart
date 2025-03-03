@@ -59,11 +59,12 @@ class MyApp extends StatelessWidget {
       title: 'Parcel Swipe App',
       theme: ThemeData(
         primarySwatch: Colors.blue,
+        useMaterial3: true,
       ),
       home: ParcelScreen(
         dbService: Provider.of<DatabaseService>(context, listen: false),
         logger: Provider.of<Logger>(context, listen: false),
-      ), // Set ParcelScreen as the home screen
+      ),
     );
   }
 }

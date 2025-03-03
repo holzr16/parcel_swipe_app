@@ -10,6 +10,8 @@ import '../widgets/dialogs/filter_dialog.dart';
 import '../widgets/custom_navigation_button.dart';
 import '../widgets/custom_map_widget.dart';
 import '../models/parcel_mode.dart';
+import '../widgets/mode_toggle_button.dart';
+import '../widgets/map_mode_widget.dart';
 
 class ParcelScreen extends StatefulWidget {
   final DatabaseService dbService;
@@ -37,6 +39,9 @@ class _ParcelScreenState extends State<ParcelScreen> {
   int _currentIndex = 0;
   bool _isConfirming = false;
 
+  // Map mode toggle state
+  bool _isMapMode = false;
+
   // Current mode
   ParcelMode _currentMode = ParcelMode.view;
 
@@ -63,7 +68,53 @@ class _ParcelScreenState extends State<ParcelScreen> {
   @override
   void initState() {
     super.initState();
-    // Removed _connectToDatabase as it's handled in main.dart
+    // Initial data loading
+    _loadFilterOptions();
+  }
+
+  Future<void> _loadFilterOptions() async {
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      // Fetch filter options
+      final counties = await widget.dbService.fetchDistinctCounties();
+      final builtUpAreas = await widget.dbService.fetchDistinctBuiltUpAreas();
+      final regions = await widget.dbService.fetchDistinctRegions();
+      final localAuthorities = await widget.dbService.fetchDistinctLocalAuthorityDistricts();
+      final landTypes = await widget.dbService.fetchDistinctLandTypes();
+
+      widget.logger.d(
+        'Fetched initial filter options: counties=${counties.length}, '
+        'bua=${builtUpAreas.length}, '
+        'regions=${regions.length}, '
+        'lads=${localAuthorities.length}, '
+        'landTypes=${landTypes.length}',
+      );
+
+      if (!mounted) return;
+      setState(() {
+        _countyOptions = counties;
+        _builtUpAreaOptions = builtUpAreas;
+        _regionOptions = regions;
+        _localAuthorityDistrictOptions = localAuthorities;
+        _landTypeOptions = landTypes;
+        _isLoading = false;
+      });
+
+      // Apply initial filter to fetch some parcels
+      await _applyFiltersAndRefresh();
+    } catch (e) {
+      widget.logger.e('Error loading initial filter options: $e');
+      if (!mounted) return;
+      
+      setState(() {
+        _isLoading = false;
+      });
+      
+      _showErrorSnackbar('Failed to load initial data. Please check your connection.');
+    }
   }
 
   Future<void> _applyFiltersAndRefresh() async {
@@ -140,9 +191,11 @@ class _ParcelScreenState extends State<ParcelScreen> {
 
       widget.logger.d('Fetched ${parcels.length} parcels for page $_pageNumber.');
 
-      if (_filteredFeatures.isNotEmpty) {
+      if (_filteredFeatures.isNotEmpty && !_isMapMode) {
         await _loadGeoJsonData();
         await _addGeoJsonLayer();
+      } else if (_isMapMode) {
+        // The MapModeWidget will handle its own data loading
       } else {
         // Clear map when no parcels are found
         await _clearGeoJsonLayer();
@@ -157,6 +210,19 @@ class _ParcelScreenState extends State<ParcelScreen> {
     }
   }
 
+  void _toggleMapMode(bool isMapMode) {
+    widget.logger.d('Toggling to ${isMapMode ? 'Map' : 'Fast'} Mode');
+    setState(() {
+      _isMapMode = isMapMode;
+    });
+    
+    // If switching to Fast Mode, ensure GeoJSON data is loaded
+    if (!isMapMode && _filteredFeatures.isNotEmpty) {
+      _loadGeoJsonData().then((_) => _addGeoJsonLayer());
+    }
+  }
+
+  // FAST MODE METHODS
   Future<void> _loadGeoJsonData() async {
     try {
       _geoJsonData = {
@@ -182,6 +248,42 @@ class _ParcelScreenState extends State<ParcelScreen> {
       if (!mounted) return;
       _showErrorSnackbar('Failed to load map data.');
     }
+  }
+
+  void _showErrorSnackbar(String message) {
+    Flushbar(
+      message: message,
+      backgroundColor: Colors.red,
+      duration: const Duration(seconds: 3),
+      margin: const EdgeInsets.all(8),
+      borderRadius: BorderRadius.circular(8),
+      flushbarPosition: FlushbarPosition.TOP,
+    ).show(context);
+    widget.logger.d('Displayed error snackbar: $message');
+  }
+
+  void _showSuccessSnackbar(String message) {
+    Flushbar(
+      message: message,
+      backgroundColor: Colors.green,
+      duration: const Duration(seconds: 3),
+      margin: const EdgeInsets.all(8),
+      borderRadius: BorderRadius.circular(8),
+      flushbarPosition: FlushbarPosition.TOP,
+    ).show(context);
+    widget.logger.d('Displayed success snackbar: $message');
+  }
+
+  void _showInfoSnackbar(String message) {
+    Flushbar(
+      message: message,
+      backgroundColor: Colors.blue,
+      duration: const Duration(seconds: 3),
+      margin: const EdgeInsets.all(8),
+      borderRadius: BorderRadius.circular(8),
+      flushbarPosition: FlushbarPosition.TOP,
+    ).show(context);
+    widget.logger.d('Displayed info snackbar: $message');
   }
 
   Future<void> _addGeoJsonLayer() async {
@@ -454,125 +556,7 @@ class _ParcelScreenState extends State<ParcelScreen> {
     });
     _updateParcel();
   }
-
-  void _openFilterDialog() async {
-    try {
-      setState(() {
-        _isLoading = true;
-      });
-
-      // Dynamically fetch filter options
-      final counties = await widget.dbService.fetchDistinctCounties();
-      final builtUpAreas = await widget.dbService.fetchDistinctBuiltUpAreas();
-      final regions = await widget.dbService.fetchDistinctRegions();
-      final localAuthorities =
-          await widget.dbService.fetchDistinctLocalAuthorityDistricts();
-      final landTypes = await widget.dbService.fetchDistinctLandTypes();
-
-      widget.logger.d(
-        'Fetched lists: counties=${counties.length}, '
-        'bua=${builtUpAreas.length}, '
-        'regions=${regions.length}, '
-        'lads=${localAuthorities.length}, '
-        'landTypes=${landTypes.length}',
-      );
-
-      setState(() {
-        _countyOptions = counties;
-        _builtUpAreaOptions = builtUpAreas;
-        _regionOptions = regions;
-        _localAuthorityDistrictOptions = localAuthorities;
-        _landTypeOptions = landTypes;
-        _isLoading = false;
-      });
-
-      widget.logger.d('Fetched filter options successfully.');
-
-      // Open the filter dialog and wait for the result
-      final result = await showDialog<Map<String, dynamic>>(
-        context: context,
-        builder: (dialogContext) {
-          return FilterDialog(
-            countyOptions: _countyOptions,
-            builtUpAreaOptions: _builtUpAreaOptions,
-            regionOptions: _regionOptions,
-            localAuthorityDistrictOptions: _localAuthorityDistrictOptions,
-            landTypeOptions: _landTypeOptions,
-            currentMode: _currentMode,
-            initialMinAcres: _minAcres,
-            initialMaxAcres: _maxAcres,
-            initialSelectedCounty: _selectedCounty,
-            initialSelectedBuiltUpArea: _selectedBuiltUpArea,
-            initialSelectedRegion: _selectedRegion,
-            initialSelectedLocalAuthorityDistrict: _selectedLocalAuthorityDistrict,
-            initialSelectedStatus: _selectedStatus,
-            initialBUAOnly: _buaOnly,
-          );
-        },
-      );
-
-      if (result != null) {
-        setState(() {
-          _currentMode = result['selectedMode'];
-          _selectedCounty = result['selectedCounty'];
-          _selectedBuiltUpArea = result['selectedBuiltUpArea'];
-          _selectedRegion = result['selectedRegion'];
-          _selectedLocalAuthorityDistrict = result['selectedLocalAuthorityDistrict'];
-          _selectedStatus = result['selectedStatus'];
-          _minAcres = result['minAcres'];
-          _maxAcres = result['maxAcres'];
-          _buaOnly = result['buaOnly'];
-        });
-        widget.logger.d('Applied new filters: $result');
-        _applyFiltersAndRefresh();
-      } else {
-        widget.logger.d('Filter dialog was dismissed without applying filters.');
-      }
-    } catch (e) {
-      widget.logger.e('Error fetching filter options: $e');
-      setState(() {
-        _isLoading = false;
-      });
-      _showErrorSnackbar('Failed to load filter options.');
-    }
-  }
-
-  void _showErrorSnackbar(String message) {
-    Flushbar(
-      message: message,
-      backgroundColor: Colors.red,
-      duration: const Duration(seconds: 3),
-      margin: const EdgeInsets.all(8),
-      borderRadius: BorderRadius.circular(8),
-      flushbarPosition: FlushbarPosition.TOP,
-    ).show(context);
-    widget.logger.d('Displayed error snackbar: $message');
-  }
-
-  void _showSuccessSnackbar(String message) {
-    Flushbar(
-      message: message,
-      backgroundColor: Colors.green,
-      duration: const Duration(seconds: 3),
-      margin: const EdgeInsets.all(8),
-      borderRadius: BorderRadius.circular(8),
-      flushbarPosition: FlushbarPosition.TOP,
-    ).show(context);
-    widget.logger.d('Displayed success snackbar: $message');
-  }
-
-  void _showInfoSnackbar(String message) {
-    Flushbar(
-      message: message,
-      backgroundColor: Colors.blue,
-      duration: const Duration(seconds: 3),
-      margin: const EdgeInsets.all(8),
-      borderRadius: BorderRadius.circular(8),
-      flushbarPosition: FlushbarPosition.TOP,
-    ).show(context);
-    widget.logger.d('Displayed info snackbar: $message');
-  }
-
+  
   Future<void> _assignStatus(String status) async {
     if (_filteredFeatures.isEmpty) return;
 
@@ -756,8 +740,90 @@ class _ParcelScreenState extends State<ParcelScreen> {
   void _onStyleLoaded(StyleLoadedEventData eventData) async {
     widget.logger.d('Style has been loaded.');
     // No longer using _mapIsReady check
-    if (_geoJsonData != null && _filteredFeatures.isNotEmpty) {
+    if (_geoJsonData != null && _filteredFeatures.isNotEmpty && !_isMapMode) {
       await _addGeoJsonLayer();
+    }
+  }
+  
+  void _openFilterDialog() async {
+    try {
+      setState(() {
+        _isLoading = true;
+      });
+
+      // Dynamically fetch filter options
+      final counties = await widget.dbService.fetchDistinctCounties();
+      final builtUpAreas = await widget.dbService.fetchDistinctBuiltUpAreas();
+      final regions = await widget.dbService.fetchDistinctRegions();
+      final localAuthorities = 
+          await widget.dbService.fetchDistinctLocalAuthorityDistricts();
+      final landTypes = await widget.dbService.fetchDistinctLandTypes();
+
+      widget.logger.d(
+        'Fetched lists: counties=${counties.length}, '
+        'bua=${builtUpAreas.length}, '
+        'regions=${regions.length}, '
+        'lads=${localAuthorities.length}, '
+        'landTypes=${landTypes.length}',
+      );
+
+      setState(() {
+        _countyOptions = counties;
+        _builtUpAreaOptions = builtUpAreas;
+        _regionOptions = regions;
+        _localAuthorityDistrictOptions = localAuthorities;
+        _landTypeOptions = landTypes;
+        _isLoading = false;
+      });
+
+      widget.logger.d('Fetched filter options successfully.');
+
+      // Open the filter dialog and wait for the result
+      final result = await showDialog<Map<String, dynamic>>(
+        context: context,
+        builder: (dialogContext) {
+          return FilterDialog(
+            countyOptions: _countyOptions,
+            builtUpAreaOptions: _builtUpAreaOptions,
+            regionOptions: _regionOptions,
+            localAuthorityDistrictOptions: _localAuthorityDistrictOptions,
+            landTypeOptions: _landTypeOptions,
+            currentMode: _currentMode,
+            initialMinAcres: _minAcres,
+            initialMaxAcres: _maxAcres,
+            initialSelectedCounty: _selectedCounty,
+            initialSelectedBuiltUpArea: _selectedBuiltUpArea,
+            initialSelectedRegion: _selectedRegion,
+            initialSelectedLocalAuthorityDistrict: _selectedLocalAuthorityDistrict,
+            initialSelectedStatus: _selectedStatus,
+            initialBUAOnly: _buaOnly,
+          );
+        },
+      );
+
+      if (result != null) {
+        setState(() {
+          _currentMode = result['selectedMode'];
+          _selectedCounty = result['selectedCounty'];
+          _selectedBuiltUpArea = result['selectedBuiltUpArea'];
+          _selectedRegion = result['selectedRegion'];
+          _selectedLocalAuthorityDistrict = result['selectedLocalAuthorityDistrict'];
+          _selectedStatus = result['selectedStatus'];
+          _minAcres = result['minAcres'];
+          _maxAcres = result['maxAcres'];
+          _buaOnly = result['buaOnly'];
+        });
+        widget.logger.d('Applied new filters: $result');
+        _applyFiltersAndRefresh();
+      } else {
+        widget.logger.d('Filter dialog was dismissed without applying filters.');
+      }
+    } catch (e) {
+      widget.logger.e('Error fetching filter options: $e');
+      setState(() {
+        _isLoading = false;
+      });
+      _showErrorSnackbar('Failed to load filter options.');
     }
   }
 
@@ -772,105 +838,132 @@ class _ParcelScreenState extends State<ParcelScreen> {
             onPressed: _openFilterDialog,
             tooltip: 'Filter',
           ),
-          // Removed the PopupMenuButton from AppBar
         ],
       ),
-      body: Column(
+      body: Stack(
         children: [
-          Padding(
-            padding: const EdgeInsets.all(8.0),
-            child: Text(
-              'Total Parcels: $_totalParcels',
-              style:
-                  const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-            ),
-          ),
-          if (_buaOnly)
-            Padding(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
-              child: Row(
-                children: const [
-                  Icon(Icons.check_box, color: Colors.blue),
-                  SizedBox(width: 8),
-                  Text(
-                    'BUA Only Filter Applied',
-                    style: TextStyle(
-                        color: Colors.blue, fontWeight: FontWeight.w500),
-                  ),
-                ],
+          Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(8.0),
+                child: Text(
+                  'Total Parcels: $_totalParcels',
+                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
               ),
-            ),
-          Expanded(
-            child: _totalParcels > 0
-                ? CustomMapWidget(
-                    key: const ValueKey("mapWidget"),
-                    onMapCreated: _onMapCreated,
-                    onStyleLoadedListener: _onStyleLoaded,
-                  )
-                : Center(
-                    child: Text(
-                      'No parcels found. Please adjust your filters.',
-                      style: TextStyle(
-                        fontSize: 16,
-                        color: Colors.grey[700],
+              if (_buaOnly)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
+                  child: Row(
+                    children: const [
+                      Icon(Icons.check_box, color: Colors.blue),
+                      SizedBox(width: 8),
+                      Text(
+                        'BUA Only Filter Applied',
+                        style: TextStyle(
+                            color: Colors.blue, fontWeight: FontWeight.w500),
                       ),
-                      textAlign: TextAlign.center,
-                    ),
+                    ],
                   ),
+                ),
+              
+              // Conditional rendering based on the current mode
+              Expanded(
+                child: _isMapMode 
+                  ? MapModeWidget(
+                      dbService: widget.dbService,
+                      logger: widget.logger,
+                      buaOnly: _buaOnly,
+                      selectedCounty: _selectedCounty,
+                      selectedBuiltUpArea: _selectedBuiltUpArea,
+                      selectedRegion: _selectedRegion,
+                      selectedLocalAuthorityDistrict: _selectedLocalAuthorityDistrict,
+                      selectedStatus: _selectedStatus,
+                      minAcres: _minAcres,
+                      maxAcres: _maxAcres,
+                      totalParcels: _totalParcels,
+                    )
+                  : _totalParcels > 0
+                    ? CustomMapWidget(
+                        key: const ValueKey("fastModeMapWidget"),
+                        onMapCreated: _onMapCreated,
+                        onStyleLoadedListener: _onStyleLoaded,
+                      )
+                    : Center(
+                        child: Text(
+                          'No parcels found. Please adjust your filters.',
+                          style: TextStyle(
+                            fontSize: 16,
+                            color: Colors.grey[700],
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+              ),
+              
+              // Show action buttons only in Fast Mode
+              if (!_isMapMode)
+                Padding(
+                  padding: const EdgeInsets.all(8.0),
+                  child: Wrap(
+                    spacing: 20,
+                    children: [
+                      if (_currentMode == ParcelMode.view) ...[
+                        CustomNavigationButton(
+                          label: 'Save',
+                          onPressed:
+                              _isConfirming ? () {} : () => _assignStatus('Saved'),
+                        ),
+                        CustomNavigationButton(
+                          label: 'Dismiss',
+                          onPressed: _isConfirming
+                              ? () {}
+                              : () => _assignStatus('Dismissed'),
+                        ),
+                        CustomNavigationButton(
+                          label: 'Skip',
+                          onPressed: _isConfirming ? () {} : _nextParcel,
+                        ),
+                      ],
+                      if (_currentMode == ParcelMode.landType)
+                        ...widget.dbService.allowedLandTypes
+                            .where((type) => type != 'Unseen')
+                            .map((landType) {
+                          return CustomNavigationButton(
+                            label: landType,
+                            onPressed: _isConfirming
+                                ? () {}
+                                : () => _assignStatus(landType),
+                          );
+                        }).toList(),
+                      if (_currentMode == ParcelMode.landSubType)
+                        ...widget.dbService.allowedLandSubTypes
+                            .where((subType) => subType != 'Unseen')
+                            .map((subType) {
+                          return CustomNavigationButton(
+                            label: subType,
+                            onPressed: _isConfirming
+                                ? () {}
+                                : () => _assignStatus(subType),
+                          );
+                        }).toList(),
+                    ],
+                  ),
+                ),
+              
+              if (_isLoading)
+                const Padding(
+                  padding: EdgeInsets.all(8.0),
+                  child: CircularProgressIndicator(),
+                ),
+            ],
           ),
-          Padding(
-            padding: const EdgeInsets.all(8.0),
-            child: Wrap(
-              spacing: 20,
-              children: [
-                if (_currentMode == ParcelMode.view) ...[
-                  CustomNavigationButton(
-                    label: 'Save',
-                    onPressed:
-                        _isConfirming ? () {} : () => _assignStatus('Saved'),
-                  ),
-                  CustomNavigationButton(
-                    label: 'Dismiss',
-                    onPressed: _isConfirming
-                        ? () {}
-                        : () => _assignStatus('Dismissed'),
-                  ),
-                  CustomNavigationButton(
-                    label: 'Skip',
-                    onPressed: _isConfirming ? () {} : _nextParcel,
-                  ),
-                ],
-                if (_currentMode == ParcelMode.landType)
-                  ...widget.dbService.allowedLandTypes
-                      .where((type) => type != 'Unseen')
-                      .map((landType) {
-                    return CustomNavigationButton(
-                      label: landType,
-                      onPressed: _isConfirming
-                          ? () {}
-                          : () => _assignStatus(landType),
-                    );
-                  }).toList(),
-                if (_currentMode == ParcelMode.landSubType)
-                  ...widget.dbService.allowedLandSubTypes
-                      .where((subType) => subType != 'Unseen')
-                      .map((subType) {
-                    return CustomNavigationButton(
-                      label: subType,
-                      onPressed: _isConfirming
-                          ? () {}
-                          : () => _assignStatus(subType),
-                    );
-                  }).toList(),
-              ],
-            ),
+          
+          // Mode toggle button - always visible
+          ModeToggleButton(
+            isMapMode: _isMapMode,
+            onToggle: _toggleMapMode,
           ),
-          if (_isLoading)
-            const Padding(
-              padding: EdgeInsets.all(8.0),
-              child: CircularProgressIndicator(),
-            ),
         ],
       ),
     );
