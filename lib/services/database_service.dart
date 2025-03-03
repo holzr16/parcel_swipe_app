@@ -45,7 +45,7 @@ class DatabaseService {
   /// Establishes a connection to the PostgreSQL database.
   Future<void> connect() async {
     final endpoint = Endpoint(
-      host: '192.168.1.252',
+      host: '100.107.171.53',
       port: 5432,
       database: 'spatial_database',
       username: 'postgres',
