@@ -1,8 +1,7 @@
-// lib\widgets\map_mode_widget.dart
-
 import 'package:flutter/material.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
 import 'package:logger/logger.dart';
+import 'package:permission_handler/permission_handler.dart';
 import '../services/database_service.dart';
 
 class MapModeWidget extends StatefulWidget {
@@ -40,6 +39,7 @@ class MapModeWidget extends StatefulWidget {
 class _MapModeWidgetState extends State<MapModeWidget> {
   MapboxMap? _mapboxMap;
   bool _isStyleLoaded = false;
+  bool _isLocationEnabled = false;
   
   // TRY CHANGING THIS TO TEST DIFFERENT SOURCE LAYER NAMES
   final String _sourceLayer = 'aug_parcels_output---combined_filtered';
@@ -83,6 +83,17 @@ class _MapModeWidgetState extends State<MapModeWidget> {
                   ),
                 ),
               ),
+              // Add location button
+              Positioned(
+                bottom: 100,
+                right: 20,
+                child: FloatingActionButton(
+                  backgroundColor: _isLocationEnabled ? Colors.blue : Colors.grey,
+                  mini: true,
+                  onPressed: _enableUserLocation,
+                  child: const Icon(Icons.my_location),
+                ),
+              ),
             ],
           ),
         ),
@@ -120,6 +131,101 @@ class _MapModeWidgetState extends State<MapModeWidget> {
 
     // Add the vector source when the style is loaded
     await _addVectorSource();
+  }
+
+  Future<void> _enableUserLocation() async {
+    if (_mapboxMap == null || !_isStyleLoaded) {
+      widget.logger.e('Map not ready for location tracking');
+      return;
+    }
+
+    try {
+      // Request location permissions
+      var status = await Permission.locationWhenInUse.request();
+      
+      if (status.isGranted) {
+        widget.logger.d('Location permission granted, enabling location component');
+        
+        // Toggle location state
+        setState(() {
+          _isLocationEnabled = !_isLocationEnabled;
+        });
+        
+        // Configure location component
+        if (_isLocationEnabled) {
+          // Enable the location component
+          await _mapboxMap!.location.updateSettings(
+            LocationComponentSettings(
+              enabled: true,
+              pulsingEnabled: true,
+              pulsingColor: 0xFF2196F3, // Blue color as integer
+              pulsingMaxRadius: 50,
+              showAccuracyRing: true,
+              accuracyRingColor: 0x1A2196F3, // Blue with 10% opacity
+              accuracyRingBorderColor: 0x4D2196F3, // Blue with 30% opacity
+              puckBearingEnabled: true,
+              puckBearing: PuckBearing.HEADING,
+              // Use the default location puck instead of custom images
+              locationPuck: LocationPuck(
+                locationPuck2D: DefaultLocationPuck2D(),
+              ),
+            ),
+          );
+          
+          // Move camera to user's location manually
+          await _mapboxMap!.flyTo(
+            CameraOptions(
+              zoom: 16.0,
+              pitch: 45.0,
+            ),
+            MapAnimationOptions(
+              duration: 1000,
+              startDelay: 0,
+            ),
+          );
+          
+          widget.logger.d('Location component enabled and camera moved to user location');
+        } else {
+          // Disable location tracking when button is toggled off
+          await _mapboxMap!.location.updateSettings(
+            LocationComponentSettings(
+              enabled: false,
+            ),
+          );
+          
+          // Reset camera to default view
+          await _mapboxMap!.setCamera(
+            CameraOptions(
+              center: Point(coordinates: Position(-1.5, 53.1)),
+              zoom: 15.0,
+            ),
+          );
+          
+          widget.logger.d('Location component disabled');
+        }
+      } else {
+        widget.logger.e('Location permission denied');
+        // Show a snackbar or dialog explaining why location is needed
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Location permission is required to show your location on the map'),
+              duration: Duration(seconds: 3),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      widget.logger.e('Error enabling user location: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error enabling location: $e'),
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    }
   }
 
   Future<void> _addVectorSource() async {

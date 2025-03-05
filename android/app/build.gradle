@@ -8,7 +8,8 @@ plugins {
 
 android {
     namespace 'com.example.parcel_swipe_app'
-    compileSdkVersion 34
+    compileSdk 35
+    ndkVersion "25.1.8937393"
 
     defaultConfig {
         applicationId "com.example.parcel_swipe_app"
