@@ -1,7 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
-import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
+import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
 import 'package:logger/logger.dart';
-import 'package:permission_handler/permission_handler.dart';
+import 'package:geolocator/geolocator.dart' as geo;
 import '../services/database_service.dart';
 
 class MapModeWidget extends StatefulWidget {
@@ -37,9 +39,11 @@ class MapModeWidget extends StatefulWidget {
 }
 
 class _MapModeWidgetState extends State<MapModeWidget> {
-  MapboxMap? _mapboxMap;
+  mapbox.MapboxMap? _mapboxMap;
   bool _isStyleLoaded = false;
   bool _isLocationEnabled = false;
+  bool _isFollowingUser = false; // Track if camera is following user
+  StreamSubscription<geo.Position>? _positionStreamSubscription;
   
   // TRY CHANGING THIS TO TEST DIFFERENT SOURCE LAYER NAMES
   final String _sourceLayer = 'aug_parcels_output---combined_filtered';
@@ -49,16 +53,31 @@ class _MapModeWidgetState extends State<MapModeWidget> {
   }
 
   @override
+  void dispose() {
+    // Make sure to cancel any active position streams when the widget is disposed
+    _stopLocationUpdates();
+    super.dispose();
+  }
+
+  void _stopLocationUpdates() {
+    if (_positionStreamSubscription != null) {
+      _positionStreamSubscription!.cancel();
+      _positionStreamSubscription = null;
+      widget.logger.d('Position stream subscription cancelled');
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Column(
       children: [
         Expanded(
           child: Stack(
             children: [
-              MapWidget(
-                styleUri: MapboxStyles.SATELLITE_STREETS,
-                cameraOptions: CameraOptions(
-                  center: Point(coordinates: Position(-1.5, 53.1)),
+              mapbox.MapWidget(
+                styleUri: mapbox.MapboxStyles.SATELLITE_STREETS,
+                cameraOptions: mapbox.CameraOptions(
+                  center: mapbox.Point(coordinates: mapbox.Position(-1.5, 53.1)),
                   zoom: 15.0, // Start at the minimum zoom level for vector tiles
                 ),
                 onMapCreated: _onMapCreated,
@@ -90,8 +109,8 @@ class _MapModeWidgetState extends State<MapModeWidget> {
                 child: FloatingActionButton(
                   backgroundColor: _isLocationEnabled ? Colors.blue : Colors.grey,
                   mini: true,
-                  onPressed: _enableUserLocation,
-                  child: const Icon(Icons.my_location),
+                  onPressed: _toggleUserLocation,
+                  child: Icon(_isFollowingUser ? Icons.gps_fixed : Icons.my_location),
                 ),
               ),
             ],
@@ -101,18 +120,18 @@ class _MapModeWidgetState extends State<MapModeWidget> {
     );
   }
 
-  void _onMapCreated(MapboxMap mapboxMap) async {
+  void _onMapCreated(mapbox.MapboxMap mapboxMap) async {
     widget.logger.d('Map created in Map Mode');
     _mapboxMap = mapboxMap;
 
     try {
-      await _mapboxMap!.loadStyleURI(MapboxStyles.SATELLITE_STREETS);
-      widget.logger.d('Loaded style: ${MapboxStyles.SATELLITE_STREETS}');
+      await _mapboxMap!.loadStyleURI(mapbox.MapboxStyles.SATELLITE_STREETS);
+      widget.logger.d('Loaded style: ${mapbox.MapboxStyles.SATELLITE_STREETS}');
       
       // Set camera to display UK centered at zoom 15
       await _mapboxMap!.setCamera(
-        CameraOptions(
-          center: Point(coordinates: Position(-1.5, 53.1)),
+        mapbox.CameraOptions(
+          center: mapbox.Point(coordinates: mapbox.Position(-1.5, 53.1)),
           zoom: 15.0, // Set to minimum zoom level for seeing vector tiles
         ),
       );
@@ -123,7 +142,7 @@ class _MapModeWidgetState extends State<MapModeWidget> {
     }
   }
 
-  void _onStyleLoaded(StyleLoadedEventData eventData) async {
+  void _onStyleLoaded(mapbox.StyleLoadedEventData eventData) async {
     widget.logger.d('Style loaded in Map Mode');
     setState(() {
       _isStyleLoaded = true;
@@ -133,79 +152,102 @@ class _MapModeWidgetState extends State<MapModeWidget> {
     await _addVectorSource();
   }
 
-  Future<void> _enableUserLocation() async {
+  Future<void> _toggleUserLocation() async {
     if (_mapboxMap == null || !_isStyleLoaded) {
       widget.logger.e('Map not ready for location tracking');
       return;
     }
 
     try {
-      // Request location permissions
-      var status = await Permission.locationWhenInUse.request();
+      // If location is already enabled, disable it
+      if (_isLocationEnabled) {
+        await _disableUserLocation();
+      } else {
+        // Otherwise, enable location
+        await _enableUserLocation();
+      }
+    } catch (e) {
+      widget.logger.e('Error toggling user location: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error toggling location: $e'),
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    }
+  }
+
+  /// Disable location tracking and resets the map view
+  Future<void> _disableUserLocation() async {
+    // Cancel any active location updates
+    _stopLocationUpdates();
+    
+    // Disable location component
+    await _mapboxMap!.location.updateSettings(
+      mapbox.LocationComponentSettings(
+        enabled: false,
+      ),
+    );
+    
+    // Reset camera to default view
+    await _mapboxMap!.setCamera(
+      mapbox.CameraOptions(
+        center: mapbox.Point(coordinates: mapbox.Position(-1.5, 53.1)),
+        zoom: 15.0,
+      ),
+    );
+    
+    setState(() {
+      _isLocationEnabled = false;
+      _isFollowingUser = false;
+    });
+    
+    widget.logger.d('Location component disabled');
+  }
+
+  /// Enable location tracking and move camera to user's location
+  Future<void> _enableUserLocation() async {
+    // First check if location service is enabled
+    bool serviceEnabled = await geo.Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      widget.logger.e('Location services are disabled');
       
-      if (status.isGranted) {
-        widget.logger.d('Location permission granted, enabling location component');
+      // Show message asking user to enable location services
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Location services are disabled. Please enable location in your device settings.'),
+            duration: Duration(seconds: 3),
+          ),
+        );
         
-        // Toggle location state
-        setState(() {
-          _isLocationEnabled = !_isLocationEnabled;
-        });
+        // Try to open location settings
+        bool settingsOpened = await geo.Geolocator.openLocationSettings();
+        if (!settingsOpened) {
+          widget.logger.e('Could not open location settings');
+          return;
+        }
         
-        // Configure location component
-        if (_isLocationEnabled) {
-          // Enable the location component
-          await _mapboxMap!.location.updateSettings(
-            LocationComponentSettings(
-              enabled: true,
-              pulsingEnabled: true,
-              pulsingColor: 0xFF2196F3, // Blue color as integer
-              pulsingMaxRadius: 50,
-              showAccuracyRing: true,
-              accuracyRingColor: 0x1A2196F3, // Blue with 10% opacity
-              accuracyRingBorderColor: 0x4D2196F3, // Blue with 30% opacity
-              puckBearingEnabled: true,
-              puckBearing: PuckBearing.HEADING,
-              // Use the default location puck instead of custom images
-              locationPuck: LocationPuck(
-                locationPuck2D: DefaultLocationPuck2D(),
-              ),
-            ),
-          );
-          
-          // Move camera to user's location manually
-          await _mapboxMap!.flyTo(
-            CameraOptions(
-              zoom: 16.0,
-              pitch: 45.0,
-            ),
-            MapAnimationOptions(
-              duration: 1000,
-              startDelay: 0,
-            ),
-          );
-          
-          widget.logger.d('Location component enabled and camera moved to user location');
-        } else {
-          // Disable location tracking when button is toggled off
-          await _mapboxMap!.location.updateSettings(
-            LocationComponentSettings(
-              enabled: false,
-            ),
-          );
-          
-          // Reset camera to default view
-          await _mapboxMap!.setCamera(
-            CameraOptions(
-              center: Point(coordinates: Position(-1.5, 53.1)),
-              zoom: 15.0,
-            ),
-          );
-          
-          widget.logger.d('Location component disabled');
+        // Wait for the user to return from settings
+        // Check again if location services are enabled
+        serviceEnabled = await geo.Geolocator.isLocationServiceEnabled();
+        if (!serviceEnabled) {
+          widget.logger.e('Location services are still disabled after settings opened');
+          return;
         }
       } else {
+        return;
+      }
+    }
+
+    // Request location permissions
+    geo.LocationPermission permission = await geo.Geolocator.checkPermission();
+    if (permission == geo.LocationPermission.denied) {
+      permission = await geo.Geolocator.requestPermission();
+      if (permission == geo.LocationPermission.denied) {
         widget.logger.e('Location permission denied');
-        // Show a snackbar or dialog explaining why location is needed
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -214,18 +256,152 @@ class _MapModeWidgetState extends State<MapModeWidget> {
             ),
           );
         }
+        return;
       }
+    }
+    
+    if (permission == geo.LocationPermission.deniedForever) {
+      widget.logger.e('Location permission permanently denied');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Location permission is permanently denied. Please enable it in app settings.'),
+            duration: Duration(seconds: 3),
+          ),
+        );
+        
+        // Try to open app settings
+        bool settingsOpened = await geo.Geolocator.openAppSettings();
+        if (!settingsOpened) {
+          widget.logger.e('Could not open app settings');
+        }
+      }
+      return;
+    }
+    
+    // Permission is granted, proceed with location component
+    setState(() {
+      _isLocationEnabled = true;
+    });
+    
+    // Show loading indicator
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Finding your location...'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
+    
+    // Get current position
+    try {
+      // Get the user's current position - pass in LocationSettings
+      geo.Position position = await geo.Geolocator.getCurrentPosition(
+        locationSettings: const geo.LocationSettings(
+          accuracy: geo.LocationAccuracy.high,
+        ),
+      );
+      
+      widget.logger.d('Current position: ${position.latitude}, ${position.longitude}');
+      
+      // Enable the location component
+      await _mapboxMap!.location.updateSettings(
+        mapbox.LocationComponentSettings(
+          enabled: true,
+          pulsingEnabled: true,
+          pulsingColor: 0xFF2196F3, // Blue color as integer
+          pulsingMaxRadius: 50,
+          showAccuracyRing: true,
+          accuracyRingColor: 0x1A2196F3, // Blue with 10% opacity
+          accuracyRingBorderColor: 0x4D2196F3, // Blue with 30% opacity
+          puckBearingEnabled: true,
+          puckBearing: mapbox.PuckBearing.HEADING,
+          // Use the default location puck
+          locationPuck: mapbox.LocationPuck(
+            locationPuck2D: mapbox.DefaultLocationPuck2D(),
+          ),
+        ),
+      );
+      
+      // Move camera to the user's actual location
+      await _mapboxMap!.flyTo(
+        mapbox.CameraOptions(
+          center: mapbox.Point(coordinates: mapbox.Position(position.longitude, position.latitude)),
+          zoom: 16.0,
+          pitch: 45.0,
+        ),
+        mapbox.MapAnimationOptions(
+          duration: 1500,
+          startDelay: 0,
+        ),
+      );
+      
+      // Set following state to true
+      setState(() {
+        _isFollowingUser = true;
+      });
+      
+      // Start listening to location updates to keep following the user
+      _startLocationUpdates();
+      
+      widget.logger.d('Location component enabled and camera following user location');
     } catch (e) {
-      widget.logger.e('Error enabling user location: $e');
+      widget.logger.e('Error getting current position: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error enabling location: $e'),
+            content: Text('Error determining your location: $e'),
             duration: const Duration(seconds: 3),
           ),
         );
       }
+      
+      // Disable location if there was an error
+      setState(() {
+        _isLocationEnabled = false;
+        _isFollowingUser = false;
+      });
     }
+  }
+  
+  /// Start receiving location updates to follow the user's position
+  void _startLocationUpdates() {
+    // Cancel any existing subscription first
+    _stopLocationUpdates();
+    
+    // Set up location settings for continuous updates
+    final geo.LocationSettings locationSettings = geo.LocationSettings(
+      accuracy: geo.LocationAccuracy.high,
+      distanceFilter: 5, // Update when user moves more than 5 meters
+    );
+    
+    // Start listening to position updates
+    _positionStreamSubscription = geo.Geolocator.getPositionStream(
+      locationSettings: locationSettings,
+    ).listen(
+      (geo.Position? position) {
+        if (position != null && _isFollowingUser && _mapboxMap != null) {
+          // Update camera to follow user
+          _mapboxMap!.flyTo(
+            mapbox.CameraOptions(
+              center: mapbox.Point(coordinates: mapbox.Position(position.longitude, position.latitude)),
+            ),
+            mapbox.MapAnimationOptions(
+              duration: 300, // Short duration for smooth tracking
+            ),
+          );
+          
+          widget.logger.d('Updated camera position to: ${position.latitude}, ${position.longitude}');
+        }
+      },
+      onError: (Object error) {
+        widget.logger.e('Error in position stream: $error');
+        // Don't disable location on stream errors, just log them
+      },
+    );
+    
+    widget.logger.d('Started position updates stream');
   }
 
   Future<void> _addVectorSource() async {
@@ -240,7 +416,7 @@ class _MapModeWidgetState extends State<MapModeWidget> {
         widget.logger.d('Adding vector source with URL: $_tileSourceUrl');
         
         await _mapboxMap!.style.addSource(
-          VectorSource(
+          mapbox.VectorSource(
             id: 'parcels-vector-source',
             tiles: [_tileSourceUrl],
             maxzoom: 22.0,
@@ -253,14 +429,14 @@ class _MapModeWidgetState extends State<MapModeWidget> {
         widget.logger.d('Adding line layer with source layer: "$_sourceLayer"');
         
         await _mapboxMap!.style.addLayer(
-          LineLayer(
+          mapbox.LineLayer(
             id: 'parcels-line-layer',
             sourceId: 'parcels-vector-source',
             sourceLayer: _sourceLayer, // Use the specified source layer
             lineColor: 0xFFFF0000, // Red color for boundaries
             lineWidth: 2.0, // Increased width for better visibility
-            lineCap: LineCap.ROUND,
-            lineJoin: LineJoin.ROUND,
+            lineCap: mapbox.LineCap.ROUND,
+            lineJoin: mapbox.LineJoin.ROUND,
             minZoom: 15.0, // Match Martin server config minzoom
             maxZoom: 22.0,
           ),
