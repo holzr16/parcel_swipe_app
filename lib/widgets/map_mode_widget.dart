@@ -76,57 +76,197 @@ class _MapModeWidgetState extends State<MapModeWidget> {
   }
 
   @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Expanded(
-          child: Stack(
-            children: [
-              mapbox.MapWidget(
-                styleUri: mapbox.MapboxStyles.SATELLITE_STREETS,
-                cameraOptions: mapbox.CameraOptions(
-                  center: mapbox.Point(coordinates: mapbox.Position(-1.5, 53.1)),
-                  zoom: 15.0, // Start at the minimum zoom level for vector tiles
-                ),
-                onMapCreated: _onMapCreated,
-                onStyleLoadedListener: _onStyleLoaded,
+Widget build(BuildContext context) {
+  return Column(
+    children: [
+      Expanded(
+        child: Stack(
+          children: [
+            mapbox.MapWidget(
+              styleUri: mapbox.MapboxStyles.SATELLITE_STREETS,
+              cameraOptions: mapbox.CameraOptions(
+                center: mapbox.Point(coordinates: mapbox.Position(-1.5, 53.1)),
+                zoom: 15.0, // Start at the minimum zoom level for vector tiles
               ),
-              // Add a zoom info overlay to help users understand the zoom requirement
-              Positioned(
-                top: 20,
-                right: 20,
-                child: Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withAlpha(204),
-                    borderRadius: BorderRadius.circular(8),
+              onMapCreated: _onMapCreated,
+              onStyleLoadedListener: _onStyleLoaded,
+            ),
+            // Add a zoom info overlay to help users understand the zoom requirement
+            Positioned(
+              top: 20,
+              right: 20,
+              child: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.white.withAlpha(204),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Text(
+                  "Zoom in to level 15+ to see parcel boundaries",
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
                   ),
-                  child: const Text(
-                    "Zoom in to level 15+ to see parcel boundaries",
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+            // Add location button
+            Positioned(
+              bottom: 100,
+              right: 20,
+              child: FloatingActionButton(
+                backgroundColor: _isLocationEnabled ? Colors.blue : Colors.grey,
+                mini: true,
+                onPressed: _toggleUserLocation,
+                child: Icon(_isFollowingUser ? Icons.gps_fixed : Icons.my_location),
+              ),
+            ),
+            // Display parcel info modal when a parcel is selected
+            if (_selectedParcelId != null)
+              _buildParcelInfoModal(context),
+          ],
+        ),
+      ),
+    ],
+  );
+}
+
+  // Method to build the parcel info modal sheet
+Widget _buildParcelInfoModal(BuildContext context) {
+  return Positioned(
+    bottom: 0,
+    left: 0,
+    right: 0,
+    child: Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: const BorderRadius.only(
+          topLeft: Radius.circular(16.0),
+          topRight: Radius.circular(16.0),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.2),
+            blurRadius: 10,
+            spreadRadius: 2,
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Drag handle
+          Container(
+            margin: const EdgeInsets.only(top: 8),
+            width: 40,
+            height: 4,
+            decoration: BoxDecoration(
+              color: Colors.grey[300],
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Parcel title
+                Text(
+                  'Parcel ID: $_selectedParcelId',
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                
+                // Parcel info (placeholder)
+                const Text(
+                  'Parcel Information',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                const Text('Status: Placeholder status'),
+                const Text('Area: Placeholder area'),
+                const Text('County: Placeholder county'),
+                const Text('Region: Placeholder region'),
+                
+                const SizedBox(height: 16),
+                
+                // Save button
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: () {
+                      // No action needed for now
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Save functionality will be implemented soon'),
+                          duration: Duration(seconds: 2),
+                        ),
+                      );
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.blue,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    child: const Text(
+                      'Save Parcel',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ),
                 ),
-              ),
-              // Add location button
-              Positioned(
-                bottom: 100,
-                right: 20,
-                child: FloatingActionButton(
-                  backgroundColor: _isLocationEnabled ? Colors.blue : Colors.grey,
-                  mini: true,
-                  onPressed: _toggleUserLocation,
-                  child: Icon(_isFollowingUser ? Icons.gps_fixed : Icons.my_location),
+                
+                const SizedBox(height: 8),
+                
+                // Close button
+                SizedBox(
+                  width: double.infinity,
+                  child: TextButton(
+                    onPressed: () {
+                      // Clear selection when closed
+                      setState(() {
+                        _selectedParcelId = null;
+                        _selectedFeatureGeometry = null;
+                      });
+                      _removeExistingHighlights();
+                    },
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                    child: const Text(
+                      'Close',
+                      style: TextStyle(
+                        fontSize: 16,
+                      ),
+                    ),
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
-      ],
-    );
-  }
+        ],
+      ),
+    ),
+  );
+}
+
+// Update your _queryParcelAtLocation method to fetch more parcel info when available
+// This is a placeholder for when you want to show real data in the modal
+Future<void> _fetchParcelInfo(String parcelId) async {
+  // For future implementation - fetch parcel data from your database
+  // You would update your state with real data here
+}
 
   void _onMapCreated(mapbox.MapboxMap mapboxMap) async {
     widget.logger.d('Map created in Map Mode');
